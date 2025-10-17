@@ -87,6 +87,35 @@
                 <div id="player-setup-container" class="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                     <!-- Player setup cards go here -->
                 </div>
+
+                <!-- Grid Settings -->
+                <div id="grid-settings" class="w-full max-w-lg bg-gray-700 p-4 rounded-lg mb-6">
+                    <h2 class="text-2xl font-bold mb-4 text-center">Grid Settings</h2>
+                    <div class="flex flex-col gap-4">
+                        <!-- Width Slider -->
+                        <div class="flex items-center gap-4">
+                            <label for="grid-width-slider" class="w-20">Width:</label>
+                            <input type="range" id="grid-width-slider" min="5" max="8" value="7" class="flex-grow">
+                            <span id="grid-width-value" class="w-8 text-center font-bold">7</span>
+                        </div>
+                        <!-- Height Slider -->
+                        <div class="flex items-center gap-4">
+                            <label for="grid-height-slider" class="w-20">Height:</label>
+                            <input type="range" id="grid-height-slider" min="6" max="11" value="11" class="flex-grow">
+                            <span id="grid-height-value" class="w-8 text-center font-bold">11</span>
+                        </div>
+                        <!-- Holes Toggle -->
+                        <div class="flex items-center gap-4 mt-2">
+                            <label for="enable-holes-toggle" class="w-20">Holes:</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" id="enable-holes-toggle" class="sr-only peer">
+                              <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                              <span class="ml-3 text-sm font-medium">Enable</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <button id="start-game-button" class="bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-3 px-8 rounded-lg shadow-lg text-2xl transition-transform transform hover:scale-105">
                     Start Game
                 </button>
@@ -128,6 +157,7 @@
         // --- Game Configuration ---
         let GRID_WIDTH = 7;
         let GRID_HEIGHT = 11;
+        let enableGridHoles = false;
         const MAX_PLAYERS = 6;
         let activePlayers = 0;
 
@@ -144,6 +174,11 @@
         const winnerOverlay = document.getElementById('winner-overlay');
         const winnerText = document.getElementById('winner-text');
         const roundCounterArea = document.getElementById('round-counter-area');
+        const gridWidthSlider = document.getElementById('grid-width-slider');
+        const gridWidthValue = document.getElementById('grid-width-value');
+        const gridHeightSlider = document.getElementById('grid-height-slider');
+        const gridHeightValue = document.getElementById('grid-height-value');
+        const enableHolesToggle = document.getElementById('enable-holes-toggle');
 
         // --- Game State ---
         let grid;
@@ -198,6 +233,13 @@
                     });
                 }
             }
+            
+            gridWidthSlider.addEventListener('input', () => {
+                gridWidthValue.textContent = gridWidthSlider.value;
+            });
+            gridHeightSlider.addEventListener('input', () => {
+                gridHeightValue.textContent = gridHeightSlider.value;
+            });
 
             setupPlayers.forEach((player, i) => {
                 createPlayerSetupCard(i);
@@ -344,6 +386,10 @@
         }
         
         startGameButton.addEventListener('click', () => {
+             GRID_WIDTH = parseInt(gridWidthSlider.value, 10);
+             GRID_HEIGHT = parseInt(gridHeightSlider.value, 10);
+             enableGridHoles = enableHolesToggle.checked;
+
              players = setupPlayers.filter(p => p.type !== 'OFF' && p.color).map((p, i) => ({
                 id: i,
                 color: p.color.main,
@@ -365,7 +411,16 @@
             setupScreen.style.display = 'none';
             gameScreen.style.display = 'flex';
             turnCount = 0;
-            grid = Array(GRID_HEIGHT).fill(null).map(() => Array(GRID_WIDTH).fill(null).map(() => ({ owner: null, atoms: 0 })));
+            
+            grid = Array(GRID_HEIGHT).fill(null).map((_, y) => 
+                Array(GRID_WIDTH).fill(null).map((_, x) => {
+                    if (enableGridHoles && Math.random() < 0.15 && x > 0 && x < GRID_WIDTH - 1 && y > 0 && y < GRID_HEIGHT - 1) {
+                        return null; // This is a hole
+                    }
+                    return { owner: null, atoms: 0 };
+                })
+            );
+
             currentPlayerIndex = Math.floor(Math.random() * activePlayers);
             winnerOverlay.classList.add('hidden');
             winnerOverlay.classList.remove('flex');
@@ -408,7 +463,11 @@
                  messageArea.innerHTML = `<span>${message}</span>`;
             } else if (gameState === 'PLAYING' || gameState === 'GAMEOVER') {
                 const player = players[currentPlayerIndex];
-                messageArea.innerHTML = player ? `<span style="color: ${player.color}">${player.name} Player's Turn</span>` : '';
+                if (player) {
+                    messageArea.innerHTML = `<span style="color: ${player.color}">${player.name} Player's Turn</span>`;
+                } else {
+                     messageArea.innerHTML = '';
+                }
             }
 
             if (gameState !== 'PLAYING' && gameState !== 'GAMEOVER') return;
@@ -488,6 +547,8 @@
             
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
+                    if (grid[y][x] === null) continue; // Skip drawing holes
+
                     const cellX = x * cellSize;
                     const cellY = y * cellSize;
                     const offset = borderWidth / 2;
@@ -521,7 +582,7 @@
                         continue;
                     }
                     const cell = grid[y][x];
-                    if (cell.owner !== null) {
+                    if (cell !== null && cell.owner !== null) {
                         const player = players[cell.owner];
                         drawAtomInCell(x, y, cell.atoms, player);
                     }
@@ -631,9 +692,9 @@
                 const centerY = anim.y * cellSize + cellSize / 2;
                 const baseRadius = cellSize * 0.15;
 
-                // Stage 1: Converge (0ms - 200ms)
+                // Stage 1: Converge (0ms - 170ms)
                 const p1End = 170 / 370;
-                // Stage 2: Grow (200ms - 400ms)
+                // Stage 2: Grow (170ms - 270ms)
                 const p2End = 270 / 370;
 
                 if (progress < p1End) {
@@ -649,7 +710,7 @@
                     const newRadius = baseRadius + (maxRadius - baseRadius) * growProgress;
                     drawSphere(centerX, centerY, newRadius, anim.player.color, anim.player.lightColor, anim.player.darkColor);
                 } 
-                // Stage 3: Flash (400ms - 570ms)
+                // Stage 3: Flash (270ms - 370ms)
                 else {
                     const flashProgress = (progress - p2End) / (1 - p2End);
                     const isFlashOn = Math.floor(flashProgress * 8) % 2 === 0;
@@ -678,22 +739,25 @@
             return { gridX, gridY };
         }
 
-        function getNeighborCount(x, y) {
-            let count = 0;
-            if (x > 0) count++;
-            if (x < GRID_WIDTH - 1) count++;
-            if (y > 0) count++;
-            if (y < GRID_HEIGHT - 1) count++;
-            return count;
+        function getNeighbors(x, y, board) {
+            const potentialNeighbors = [
+                {x: x - 1, y: y},
+                {x: x + 1, y: y},
+                {x: x,     y: y - 1},
+                {x: x,     y: y + 1}
+            ];
+            const neighbors = [];
+
+            for (const n of potentialNeighbors) {
+                if (n.x >= 0 && n.x < GRID_WIDTH && n.y >= 0 && n.y < GRID_HEIGHT && board[n.y][n.x] !== null) {
+                    neighbors.push(n);
+                }
+            }
+            return neighbors;
         }
         
-        function getNeighbors(x, y) {
-            const neighbors = [];
-            if (x > 0) neighbors.push({x: x-1, y: y});
-            if (x < GRID_WIDTH - 1) neighbors.push({x: x+1, y: y});
-            if (y > 0) neighbors.push({x: x, y: y-1});
-            if (y < GRID_HEIGHT - 1) neighbors.push({x: x, y: y+1});
-            return neighbors;
+        function getNeighborCount(x, y, board) {
+            return getNeighbors(x, y, board).length;
         }
 
         function handlePlayerClick(event) {
@@ -705,6 +769,12 @@
 
         function placeAtom(gridX, gridY) {
             if (gridX < 0 || gridX >= GRID_WIDTH || gridY < 0 || gridY >= GRID_HEIGHT) return;
+            
+            if (grid[gridY][gridX] === null) {
+                updateUI("You can't play in a hole!");
+                return;
+            }
+
             const cell = grid[gridY][gridX];
             if (cell.owner !== null && cell.owner !== currentPlayerIndex) {
                  updateUI("You can't play in an opponent's cell!");
@@ -723,7 +793,8 @@
              for (let y = 0; y < GRID_HEIGHT; y++) {
                  for (let x = 0; x < GRID_WIDTH; x++) {
                      const cell = grid[y][x];
-                     const threshold = getNeighborCount(x, y);
+                     if (cell === null) continue;
+                     const threshold = getNeighborCount(x, y, grid);
                      if (cell.owner !== null && cell.atoms >= threshold) {
                          explodingCells.push({ x, y, threshold, cell });
                      }
@@ -743,7 +814,7 @@
                         const cell = grid[exp.y][exp.x];
                         cell.atoms -= exp.threshold;
                         if (cell.atoms === 0) cell.owner = null;
-                        const neighbors = getNeighbors(exp.x, exp.y);
+                        const neighbors = getNeighbors(exp.x, exp.y, grid);
                         neighbors.forEach(n => {
                             const neighborCell = grid[n.y][n.x];
                             neighborCell.owner = currentPlayerIndex;
@@ -780,8 +851,9 @@
             let alivePlayerIds = new Set();
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
-                    if (grid[y][x].owner !== null) {
-                        alivePlayerIds.add(grid[y][x].owner);
+                    const cell = grid[y][x];
+                    if (cell !== null && cell.owner !== null) {
+                        alivePlayerIds.add(cell.owner);
                     }
                 }
             }
@@ -848,7 +920,7 @@
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
                     const cell = grid[y][x];
-                    if(cell.owner !== null) {
+                    if(cell !== null && cell.owner !== null) {
                         const player = players[cell.owner];
                         player.cellCount++;
                         player.atomCount += cell.atoms;
@@ -876,7 +948,7 @@
             turnInProgress = true;
             updateUI('Thinking...');
             
-            await new Promise(resolve => setTimeout(resolve, 50)); 
+            await new Promise(resolve => setTimeout(resolve, 750)); 
             
             const player = players[currentPlayerIndex];
             let bestMove;
@@ -900,7 +972,7 @@
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
                     const cell = grid[y][x];
-                    if (cell.owner === null || cell.owner === currentPlayerIndex) {
+                    if (cell !== null && (cell.owner === null || cell.owner === currentPlayerIndex)) {
                         const score = scoringLogic(grid, x, y, currentPlayerIndex);
                         possibleMoves.push({ gridX: x, gridY: y, score: score });
                     }
@@ -915,7 +987,7 @@
         
         function scoreNovice(board, x, y, playerIndex) {
             const cell = board[y][x];
-            const neighborCount = getNeighborCount(x, y);
+            const neighborCount = getNeighborCount(x, y, board);
             if (cell.owner === null) {
                 if (neighborCount === 2) return 100;
                 if (neighborCount === 3) return 30;
@@ -930,17 +1002,17 @@
 
         function scoreAdept(board, x, y, playerIndex) {
             const cell = board[y][x];
-            const neighborCount = getNeighborCount(x, y);
+            const neighborCount = getNeighborCount(x, y, board);
             let score = 0;
             if (cell.owner === null) {
                 if (neighborCount === 2) score = 100;
                 if (neighborCount === 3) score = 30;
                 if (neighborCount === 4) score = 20;
-                const neighbors = getNeighbors(x, y);
+                const neighbors = getNeighbors(x, y, board);
                 for(const n of neighbors) {
                     const nc = board[n.y][n.x];
-                    if (nc.owner !== null && nc.owner !== playerIndex) {
-                        const nThreshold = getNeighborCount(n.x, n.y);
+                    if (nc !== null && nc.owner !== null && nc.owner !== playerIndex) {
+                        const nThreshold = getNeighborCount(n.x, n.y, board);
                         if(nc.atoms === nThreshold - 1) score -= 40;
                     }
                 }
@@ -955,17 +1027,17 @@
 
         function scoreVeteran(board, x, y, playerIndex) {
             const cell = board[y][x];
-            const neighborCount = getNeighborCount(x, y);
+            const neighborCount = getNeighborCount(x, y, board);
             let score = 0;
             if (cell.owner === null) {
                 if (neighborCount === 2) score = 100;
                 if (neighborCount === 3) score = 40;
                 if (neighborCount === 4) score = 20;
-                const neighbors = getNeighbors(x, y);
+                const neighbors = getNeighbors(x, y, board);
                 let isRisky = false;
                 for(const n of neighbors) {
                     const nc = board[n.y][n.x];
-                    if (nc.owner !== null && nc.owner !== playerIndex && (nc.atoms >= getNeighborCount(n.x, n.y) - 1)) {
+                    if (nc !== null && nc.owner !== null && nc.owner !== playerIndex && (nc.atoms >= getNeighborCount(n.x, n.y, board) - 1)) {
                         isRisky = true;
                         break;
                     }
@@ -991,8 +1063,8 @@
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
                     const cell = board[y][x];
-                    if (cell.owner === null) continue;
-                    const threshold = getNeighborCount(x,y);
+                    if (cell === null || cell.owner === null) continue;
+                    const threshold = getNeighborCount(x,y, board);
                     const isCritical = cell.atoms === threshold - 1;
                     if (cell.owner === forPlayerIndex) {
                         myAtoms += cell.atoms; myCells++; if (isCritical) myCriticals++;
@@ -1011,23 +1083,24 @@
             if(cell.owner === null) cell.owner = playerIndex;
             cell.atoms++;
             let chain = [];
-            const threshold = getNeighborCount(x, y);
+            const threshold = getNeighborCount(x, y, tempGrid);
             if(cell.owner === playerIndex && cell.atoms >= threshold) {
                 chain.push({x, y});
             }
             while(chain.length > 0) {
                 const current = chain.shift();
                 const currentCell = tempGrid[current.y][current.x];
-                const currentThreshold = getNeighborCount(current.x, current.y);
-                if (!currentCell || currentCell.atoms < currentThreshold) continue;
+                if (currentCell === null) continue;
+                const currentThreshold = getNeighborCount(current.x, current.y, tempGrid);
+                if (currentCell.atoms < currentThreshold) continue;
                 currentCell.atoms -= currentThreshold;
                 if(currentCell.atoms === 0) currentCell.owner = null;
-                const neighbors = getNeighbors(current.x, current.y);
+                const neighbors = getNeighbors(current.x, current.y, tempGrid);
                 for(const n of neighbors) {
                     const neighborCell = tempGrid[n.y][n.x];
                     neighborCell.owner = playerIndex;
                     neighborCell.atoms++;
-                    const neighborThreshold = getNeighborCount(n.x, n.y);
+                    const neighborThreshold = getNeighborCount(n.x, n.y, tempGrid);
                     if(neighborCell.atoms >= neighborThreshold) {
                         chain.push({x: n.x, y: n.y});
                     }
@@ -1037,7 +1110,13 @@
         }
         
         function deepCloneGrid(originalGrid) {
-            return originalGrid.map(row => row.map(cell => ({...cell})));
+            return originalGrid.map(row => {
+                if (!row) return null;
+                return row.map(cell => {
+                    if (!cell) return null;
+                    return {...cell};
+                });
+            });
         }
 
         async function findEliteMove() {
@@ -1057,7 +1136,8 @@
             let myCandidateMoves = [];
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
-                    if (grid[y][x].owner === null || grid[y][x].owner === currentPlayerIndex) {
+                    const cell = grid[y][x];
+                    if (cell !== null && (cell.owner === null || cell.owner === currentPlayerIndex)) {
                         const score = scoreVeteran(grid, x, y, currentPlayerIndex);
                         myCandidateMoves.push({ gridX: x, gridY: y, score: score });
                     }
@@ -1101,7 +1181,7 @@
                  for (let oy = 0; oy < GRID_HEIGHT; oy++) {
                     for (let ox = 0; ox < GRID_WIDTH; ox++) {
                         const oCell = tempGridAfterMyMove[oy][ox];
-                        if (oCell.owner === null || oCell.owner === mainOpponentIndex) {
+                        if (oCell !== null && (oCell.owner === null || oCell.owner === mainOpponentIndex)) {
                            const score = scoreVeteran(tempGridAfterMyMove, ox, oy, mainOpponentIndex);
                            opponentCandidateMoves.push({ gridX: ox, gridY: oy, score });
                         }
@@ -1134,6 +1214,7 @@
 
         canvas.addEventListener('click', handlePlayerClick);
         canvas.addEventListener('touchstart', handlePlayerClick, { passive: false });
+        
         restartButton.addEventListener('click', initializeSetup);
         window.addEventListener('resize', resizeCanvas);
 
