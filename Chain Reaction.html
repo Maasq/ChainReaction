@@ -71,7 +71,7 @@
 </head>
 <body class="text-white bg-gray-900">
     <!-- Background Image & Overlay Layers -->
-    <div class="absolute inset-0 z-0 bg-cover bg-center" style="background-image: url('https://source.unsplash.com/random/1920x1080?abstract');"></div>
+    <div class="absolute inset-0 z-0 bg-cover bg-center" style="background-image: url('https://picsum.photos/1920/1080');"></div>
     <div class="absolute inset-0 z-10 bg-black bg-opacity-60"></div>
 
     <!-- Main Content Container -->
@@ -97,6 +97,9 @@
             <div id="game-screen" class="w-full h-full max-w-7xl mx-auto hidden flex-col lg:flex-row items-stretch gap-4">
                 <!-- Player Info Panel -->
                 <div class="w-full lg:w-1/4 flex flex-col gap-4 flex-shrink-0">
+                    <div id="round-counter-area" class="text-center p-3 bg-gray-800 rounded-lg text-xl font-bold">
+                        Round: 1
+                    </div>
                     <div id="players-info" class="space-y-3 flex-grow relative">
                         <!-- Player cards will be inserted here -->
                     </div>
@@ -127,7 +130,6 @@
         let GRID_HEIGHT = 11;
         const MAX_PLAYERS = 6;
         let activePlayers = 0;
-        const EXPLOSION_DELAY = 200; // Delay in ms between explosion steps
 
         // --- DOM Elements ---
         const setupScreen = document.getElementById('setup-screen');
@@ -141,6 +143,7 @@
         const restartButton = document.getElementById('restart-button');
         const winnerOverlay = document.getElementById('winner-overlay');
         const winnerText = document.getElementById('winner-text');
+        const roundCounterArea = document.getElementById('round-counter-area');
 
         // --- Game State ---
         let grid;
@@ -151,6 +154,8 @@
         let cellSize;
         let turnCount = 0;
         let gameState = 'SETUP'; // SETUP, PLAYING, GAMEOVER
+        let activeAnimations = [];
+        let animationFrameId = null;
 
         const AI_LEVELS = [
             { name: "Novice", level: 1 },
@@ -174,6 +179,8 @@
 
         // --- Setup Logic ---
         function initializeSetup() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
             gameState = 'SETUP';
             document.getElementById('setup-screen').style.display = 'flex';
             document.getElementById('game-screen').style.display = 'none';
@@ -363,12 +370,21 @@
             winnerOverlay.classList.add('hidden');
             winnerOverlay.classList.remove('flex');
             turnInProgress = false;
+            activeAnimations = [];
             updateUI();
             resizeCanvas();
 
             if (players[currentPlayerIndex].type === 'AI') {
                 handleAITurn();
             }
+            gameLoop();
+        }
+
+        function gameLoop() {
+            if (gameState !== 'PLAYING') return;
+            drawGame();
+            drawAnimations();
+            animationFrameId = requestAnimationFrame(gameLoop);
         }
 
         function resizeCanvas() {
@@ -384,7 +400,7 @@
             canvas.height = cellSize * GRID_HEIGHT;
             canvas.style.width = `${canvas.width}px`;
             canvas.style.height = `${canvas.height}px`;
-            drawGame();
+            if (gameState === 'PLAYING') drawGame();
         }
 
         function updateUI(message) {
@@ -396,6 +412,12 @@
             }
 
             if (gameState !== 'PLAYING' && gameState !== 'GAMEOVER') return;
+
+            if (players.length > 0) {
+                const currentRound = Math.floor(turnCount / players.length) + 1;
+                roundCounterArea.textContent = `Round: ${currentRound}`;
+            }
+
             playersInfoDiv.innerHTML = '';
             
             const alivePlayers = players.filter(p => p.isAlive);
@@ -453,7 +475,6 @@
         }
 
         function drawGame() {
-            if (gameState !== 'PLAYING' && gameState !== 'GAMEOVER') return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawGrid();
             drawAtoms();
@@ -496,6 +517,9 @@
         function drawAtoms() {
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
+                    if (activeAnimations.some(anim => anim.x === x && anim.y === y)) {
+                        continue;
+                    }
                     const cell = grid[y][x];
                     if (cell.owner !== null) {
                         const player = players[cell.owner];
@@ -505,41 +529,27 @@
             }
         }
 
-        function drawAtomInCell(x, y, atomCount, player) {
-            if (atomCount === 0) return;
-            const { color, lightColor, darkColor } = player;
+        function getAtomPositions(x, y, atomCount) {
             const centerX = x * cellSize + cellSize / 2;
             const centerY = y * cellSize + cellSize / 2;
-            const radius = cellSize * 0.15;
             const offset = cellSize * 0.18;
-            ctx.fillStyle = color;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = Math.max(1, cellSize * 0.04);
             const positions = [];
             switch (atomCount) {
                 case 1: positions.push({ x: centerX, y: centerY }); break;
                 case 2:
                     positions.push({ x: centerX - offset, y: centerY });
                     positions.push({ x: centerX + offset, y: centerY });
-                    drawLine(positions[0], positions[1]);
                     break;
                 case 3:
                     positions.push({ x: centerX, y: centerY - offset });
                     positions.push({ x: centerX - offset, y: centerY + offset * 0.7 });
                     positions.push({ x: centerX + offset, y: centerY + offset * 0.7 });
-                    drawLine(positions[0], positions[1]);
-                    drawLine(positions[1], positions[2]);
-                    drawLine(positions[2], positions[0]);
                     break;
                 case 4:
                     positions.push({ x: centerX - offset, y: centerY - offset });
                     positions.push({ x: centerX + offset, y: centerY - offset });
                     positions.push({ x: centerX + offset, y: centerY + offset });
                     positions.push({ x: centerX - offset, y: centerY + offset });
-                    drawLine(positions[0], positions[1]);
-                    drawLine(positions[1], positions[2]);
-                    drawLine(positions[2], positions[3]);
-                    drawLine(positions[3], positions[0]);
                     break;
                 default:
                     positions.push({ x: centerX - offset, y: centerY - offset });
@@ -547,16 +557,46 @@
                     positions.push({ x: centerX, y: centerY });
                     positions.push({ x: centerX - offset, y: centerY + offset });
                     positions.push({ x: centerX + offset, y: centerY + offset });
-                     drawLine(positions[0], positions[1]);
-                     drawLine(positions[1], positions[4]);
-                     drawLine(positions[4], positions[3]);
-                     drawLine(positions[3], positions[0]);
                     break;
             }
-            positions.forEach(pos => drawSphere(pos.x, pos.y, radius, color, lightColor, darkColor));
+            return positions;
+        }
+
+        function drawAtomInCell(x, y, atomCount, player) {
+            if (atomCount === 0) return;
+            const { color } = player;
+            ctx.fillStyle = color;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = Math.max(1, cellSize * 0.04);
+            const positions = getAtomPositions(x, y, atomCount);
+            
+            if(positions.length > 1) { // Draw lines between atoms
+                for(let i = 0; i < positions.length; i++) {
+                    for(let j = i + 1; j < positions.length; j++) {
+                         // Simple connection logic for up to 5 atoms
+                         if(atomCount <= 3) drawLine(positions[i], positions[j]);
+                         else if (atomCount === 4) {
+                            if((i+j) !== 3) drawLine(positions[i], positions[j]);
+                         }
+                    }
+                }
+                 if(atomCount > 4) { // Custom for 5+
+                    drawLine(positions[0], positions[1]);
+                    drawLine(positions[1], positions[4]);
+                    drawLine(positions[4], positions[3]);
+                    drawLine(positions[3], positions[0]);
+                 }
+            }
+
+            const radius = cellSize * 0.15;
+            positions.forEach(pos => drawSphere(pos.x, pos.y, radius, player.color, player.lightColor, player.darkColor));
         }
 
         function drawSphere(x, y, radius, color, lightColor, darkColor) {
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = cellSize * 0.04;
+            ctx.shadowOffsetY = cellSize * 0.04;
             const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.4, radius * 0.05, x, y, radius);
             grad.addColorStop(0, lightColor);
             grad.addColorStop(0.7, color);
@@ -565,6 +605,10 @@
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fill();
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
         }
 
         function drawLine(pos1, pos2) {
@@ -572,6 +616,55 @@
             ctx.moveTo(pos1.x, pos1.y);
             ctx.lineTo(pos2.x, pos2.y);
             ctx.stroke();
+        }
+        
+        function drawAnimations() {
+            const now = performance.now();
+            const maxRadius = cellSize * 0.3; // 60% of cell width
+
+            for (let i = activeAnimations.length - 1; i >= 0; i--) {
+                const anim = activeAnimations[i];
+                const elapsed = now - anim.startTime;
+                const progress = Math.min(elapsed / anim.duration, 1);
+
+                const centerX = anim.x * cellSize + cellSize / 2;
+                const centerY = anim.y * cellSize + cellSize / 2;
+                const baseRadius = cellSize * 0.15;
+
+                // Stage 1: Converge (0ms - 200ms)
+                const p1End = 170 / 370;
+                // Stage 2: Grow (200ms - 400ms)
+                const p2End = 270 / 370;
+
+                if (progress < p1End) {
+                    const convergeProgress = progress / p1End;
+                    anim.initialPositions.forEach(pos => {
+                        const newX = pos.x + (centerX - pos.x) * convergeProgress;
+                        const newY = pos.y + (centerY - pos.y) * convergeProgress;
+                        drawSphere(newX, newY, baseRadius, anim.player.color, anim.player.lightColor, anim.player.darkColor);
+                    });
+                } 
+                else if (progress < p2End) {
+                    const growProgress = (progress - p1End) / (p2End - p1End);
+                    const newRadius = baseRadius + (maxRadius - baseRadius) * growProgress;
+                    drawSphere(centerX, centerY, newRadius, anim.player.color, anim.player.lightColor, anim.player.darkColor);
+                } 
+                // Stage 3: Flash (400ms - 570ms)
+                else {
+                    const flashProgress = (progress - p2End) / (1 - p2End);
+                    const isFlashOn = Math.floor(flashProgress * 8) % 2 === 0;
+                    const color = isFlashOn ? anim.player.lightColor : anim.player.color;
+                    const lightColor = isFlashOn ? '#FFFFFF' : anim.player.lightColor;
+                    drawSphere(centerX, centerY, maxRadius, color, lightColor, anim.player.darkColor);
+                }
+
+                if (progress >= 1) {
+                    if (anim.onComplete) {
+                        anim.onComplete();
+                    }
+                    activeAnimations.splice(i, 1);
+                }
+            }
         }
 
         function getCellFromCoordinates(event) {
@@ -620,46 +713,94 @@
             turnInProgress = true;
             if (cell.owner === null) cell.owner = currentPlayerIndex;
             cell.atoms++;
-            drawGame();
-            requestAnimationFrame(processExplosions);
+            processExplosions();
         }
 
-        async function processExplosions() {
-             const explosions = [];
+        function processExplosions() {
+             if (gameState === 'GAMEOVER' || activeAnimations.length > 0) return;
+
+             const explodingCells = [];
              for (let y = 0; y < GRID_HEIGHT; y++) {
                  for (let x = 0; x < GRID_WIDTH; x++) {
                      const cell = grid[y][x];
                      const threshold = getNeighborCount(x, y);
-                     if (cell.owner === currentPlayerIndex && cell.atoms >= threshold) {
-                         explosions.push({ x, y, threshold });
+                     if (cell.owner !== null && cell.atoms >= threshold) {
+                         explodingCells.push({ x, y, threshold, cell });
                      }
                  }
              }
-             if (explosions.length === 0) {
+
+             if (explodingCells.length === 0) {
                 endTurn();
                 return;
              }
-            for (const exp of explosions) {
-                 const cell = grid[exp.y][exp.x];
-                 cell.atoms -= exp.threshold;
-                 if (cell.atoms === 0) cell.owner = null;
-                 const neighbors = getNeighbors(exp.x, exp.y);
-                 for (const n of neighbors) {
-                     const neighborCell = grid[n.y][n.x];
-                     neighborCell.owner = currentPlayerIndex;
-                     neighborCell.atoms++;
-                 }
-            }
-            drawGame();
-            await new Promise(resolve => setTimeout(resolve, EXPLOSION_DELAY));
-            requestAnimationFrame(processExplosions);
+            
+             let waveCounter = explodingCells.length;
+             const onWaveComplete = () => {
+                waveCounter--;
+                if (waveCounter === 0) {
+                    explodingCells.forEach(exp => {
+                        const cell = grid[exp.y][exp.x];
+                        cell.atoms -= exp.threshold;
+                        if (cell.atoms === 0) cell.owner = null;
+                        const neighbors = getNeighbors(exp.x, exp.y);
+                        neighbors.forEach(n => {
+                            const neighborCell = grid[n.y][n.x];
+                            neighborCell.owner = currentPlayerIndex;
+                            neighborCell.atoms++;
+                        });
+                    });
+                    
+                    const winner = checkForWinner();
+                    if (winner) {
+                        showWinner(winner);
+                        return; 
+                    }
+                    setTimeout(processExplosions, 0); 
+                }
+             };
+            
+             explodingCells.forEach(exp => {
+                const player = players[exp.cell.owner];
+                activeAnimations.push({
+                    x: exp.x,
+                    y: exp.y,
+                    player: player,
+                    initialPositions: getAtomPositions(exp.x, exp.y, exp.cell.atoms),
+                    startTime: performance.now(),
+                    duration: 370,
+                    onComplete: onWaveComplete 
+                });
+             });
         }
         
+        function checkForWinner() {
+            if (turnCount < activePlayers) return null; 
+
+            let alivePlayerIds = new Set();
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    if (grid[y][x].owner !== null) {
+                        alivePlayerIds.add(grid[y][x].owner);
+                    }
+                }
+            }
+
+            if (alivePlayerIds.size === 1) {
+                const winnerId = alivePlayerIds.values().next().value;
+                return players[winnerId];
+            }
+
+            return null;
+        }
+
         function endTurn() {
+            if (gameState === 'GAMEOVER') return;
+
             turnCount++;
             updatePlayerStats();
-            const hasCellsOnBoard = players.some(p => p.cellCount > 0);
-            if (turnCount >= activePlayers && hasCellsOnBoard) {
+
+            if (turnCount >= activePlayers) {
                 players.forEach(player => {
                     if (player.isAlive && player.cellCount === 0) {
                         player.isAlive = false;
@@ -667,22 +808,33 @@
                     }
                 });
             }
+            
             const alivePlayers = players.filter(p => p.isAlive);
-            if (alivePlayers.length === 1 && hasCellsOnBoard && turnCount >= activePlayers) {
-                showWinner(alivePlayers[0]);
-                return;
-            }
-            if (players.some(p => p.isAlive)) {
+            if (alivePlayers.length > 0) {
                 let nextPlayerFound = false;
+                let loopGuard = 0;
                 do {
-                    currentPlayerIndex = (currentPlayerIndex + 1) % activePlayers;
-                    if (players[currentPlayerIndex].isAlive) nextPlayerFound = true;
-                } while (!nextPlayerFound);
+                    currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+                    if (players[currentPlayerIndex].isAlive) {
+                        nextPlayerFound = true;
+                    }
+                    loopGuard++;
+                } while (!nextPlayerFound && loopGuard < players.length * 2);
+                
+                if (!nextPlayerFound) { 
+                    updateUI('Game Over - No Winner!');
+                    gameState = 'GAMEOVER';
+                    turnInProgress = true; 
+                    return;
+                }
+
             } else {
                  updateUI('Game Over - No Winner!');
+                 gameState = 'GAMEOVER';
                  turnInProgress = true; 
                  return;
             }
+
             turnInProgress = false;
             updateUI();
             
@@ -706,6 +858,8 @@
         }
         
         function showWinner(player) {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
             gameState = 'GAMEOVER';
             turnInProgress = true;
             winnerText.textContent = `${player.name} Player Wins!`;
@@ -713,6 +867,7 @@
             winnerOverlay.classList.remove('hidden');
             winnerOverlay.classList.add('flex');
             updateUI(`Congratulations ${player.name} Player!`);
+            drawGame(); // Final draw
         }
         
         // --- AI LOGIC ---
@@ -893,6 +1048,9 @@
         }
         
         async function findMasterMove() {
+            const startTime = Date.now();
+            const timeLimit = 2000; 
+
             let bestMove = null;
             let maxScore = -Infinity;
 
@@ -901,18 +1059,22 @@
                 for (let x = 0; x < GRID_WIDTH; x++) {
                     if (grid[y][x].owner === null || grid[y][x].owner === currentPlayerIndex) {
                         const score = scoreVeteran(grid, x, y, currentPlayerIndex);
-                        myCandidateMoves.push({ x, y, score });
+                        myCandidateMoves.push({ gridX: x, gridY: y, score: score });
                     }
                 }
             }
             myCandidateMoves.sort((a, b) => b.score - a.score);
-            const topMyMoves = myCandidateMoves.slice(0, 7);
+            const topMyMoves = myCandidateMoves.slice(0, 10);
             if (topMyMoves.length === 0) return await findEliteMove();
 
-            let movesProcessed = 0;
             for (const move of topMyMoves) {
+                if (Date.now() - startTime > timeLimit) {
+                    console.log("Master AI: Time limit exceeded.");
+                    break; 
+                }
+
                 const tempGridAfterMyMove = deepCloneGrid(grid);
-                simulateMove(tempGridAfterMyMove, move.x, move.y, currentPlayerIndex);
+                simulateMove(tempGridAfterMyMove, move.gridX, move.gridY, currentPlayerIndex);
 
                 let mainOpponentIndex = -1;
                 let maxOpponentAtoms = -1;
@@ -925,7 +1087,15 @@
                     }
                 }
 
-                if (mainOpponentIndex === -1) return move;
+                if (mainOpponentIndex === -1) {
+                    const myScore = evaluateBoardState(tempGridAfterMyMove, currentPlayerIndex);
+                     if (myScore > maxScore) {
+                        maxScore = myScore;
+                        bestMove = move;
+                    }
+                    continue;
+                }
+
 
                 let opponentCandidateMoves = [];
                  for (let oy = 0; oy < GRID_HEIGHT; oy++) {
@@ -957,10 +1127,6 @@
                 if (finalScore > maxScore) {
                     maxScore = finalScore;
                     bestMove = move;
-                }
-                
-                if (++movesProcessed % 3 === 0) {
-                    await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
             return bestMove || await findEliteMove();
