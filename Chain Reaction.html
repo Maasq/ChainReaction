@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chain Reaction</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            touch-action: none; /* Prevents scrolling on touch devices */
+        }
+        canvas {
+            cursor: pointer;
+        }
+        .player-card {
+            transition: all 0.3s ease;
+            transform: scale(1);
+            background-color: #6B7280; /* Mid Grey */
+        }
+        .player-card.active {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px 5px var(--player-color), 0 0 5px 2px var(--player-color-light);
+        }
+        #players-info {
+             overflow-y: auto;
+        }
+        .highlight-green { color: #4ade80; /* green-400 */ }
+        .highlight-red { color: #f87171; /* red-400 */ }
+        
+        .mini-swatch {
+            width: 1.25rem;
+            height: 1.25rem;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .mini-swatch:hover {
+            transform: scale(1.15);
+        }
+        .mini-swatch.selected {
+             border-color: white;
+             box-shadow: 0 0 5px 2px white;
+        }
+        .game-header {
+            background: linear-gradient(to bottom, #660000, #E8A23D 50%, #660000);
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.55));
+        }
+        .header-text {
+            color: #FFFFE0;
+            text-shadow: 0 0 5px #90ee90, 0 0 8px #90ee90;
+        }
+        .ai-level-button {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            background-color: #4A5568;
+            transition: background-color 0.2s;
+        }
+        .ai-level-button.selected {
+            background-color: #F59E0B;
+            color: #1F2937;
+        }
+
+    </style>
+</head>
+<body class="text-white bg-gray-900">
+    <!-- Background Image & Overlay Layers -->
+    <div class="absolute inset-0 z-0 bg-cover bg-center" style="background-image: url('https://source.unsplash.com/random/1920x1080?abstract');"></div>
+    <div class="absolute inset-0 z-10 bg-black bg-opacity-60"></div>
+
+    <!-- Main Content Container -->
+    <div class="relative z-20 flex flex-col h-screen p-2">
+        <header class="w-full max-w-4xl mx-auto mb-2 py-2 rounded-md game-header text-center">
+            <h1 class="text-5xl font-bold italic header-text">Chain Reaction</h1>
+        </header>
+
+        <main class="flex-grow w-full h-full min-h-0">
+            <!-- Game Setup Screen -->
+            <div id="setup-screen" class="w-full h-full max-w-4xl mx-auto flex flex-col items-center justify-center p-4 bg-gray-800 bg-opacity-90 rounded-xl">
+                <h1 class="text-5xl font-bold mb-6">Game Setup</h1>
+                <div id="player-setup-container" class="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    <!-- Player setup cards go here -->
+                </div>
+                <button id="start-game-button" class="bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-3 px-8 rounded-lg shadow-lg text-2xl transition-transform transform hover:scale-105">
+                    Start Game
+                </button>
+            </div>
+
+
+            <!-- Main Game Screen (hidden initially) -->
+            <div id="game-screen" class="w-full h-full max-w-7xl mx-auto hidden flex-col lg:flex-row items-stretch gap-4">
+                <!-- Player Info Panel -->
+                <div class="w-full lg:w-1/4 flex flex-col gap-4 flex-shrink-0">
+                    <div id="players-info" class="space-y-3 flex-grow relative">
+                        <!-- Player cards will be inserted here -->
+                    </div>
+                     <div id="message-area" class="text-center p-3 h-12 bg-gray-800 rounded-lg text-lg font-medium flex items-center justify-center">
+                        <span>Welcome!</span>
+                    </div>
+                    <button id="restart-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-105 mt-auto">
+                        Restart Game
+                    </button>
+                </div>
+
+                <!-- Game Canvas -->
+                <div id="canvas-container" class="relative flex-grow flex items-center justify-center min-h-0">
+                    <canvas id="gameCanvas"></canvas>
+                     <div id="winner-overlay" class="absolute inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden rounded-lg">
+                        <h2 id="winner-text" class="text-5xl font-bold"></h2>
+                        <p class="text-xl mt-4">Click Restart to play again!</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+
+    <script>
+        // --- Game Configuration ---
+        let GRID_WIDTH = 7;
+        let GRID_HEIGHT = 11;
+        const MAX_PLAYERS = 6;
+        let activePlayers = 0;
+        const EXPLOSION_DELAY = 200; // Delay in ms between explosion steps
+
+        // --- DOM Elements ---
+        const setupScreen = document.getElementById('setup-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const playerSetupContainer = document.getElementById('player-setup-container');
+        const startGameButton = document.getElementById('start-game-button');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const playersInfoDiv = document.getElementById('players-info');
+        const messageArea = document.getElementById('message-area');
+        const restartButton = document.getElementById('restart-button');
+        const winnerOverlay = document.getElementById('winner-overlay');
+        const winnerText = document.getElementById('winner-text');
+
+        // --- Game State ---
+        let grid;
+        let players = [];
+        let setupPlayers = [];
+        let currentPlayerIndex;
+        let turnInProgress = false;
+        let cellSize;
+        let turnCount = 0;
+        let gameState = 'SETUP'; // SETUP, PLAYING, GAMEOVER
+
+        const AI_LEVELS = [
+            { name: "Novice", level: 1 },
+            { name: "Adept", level: 2 },
+            { name: "Veteran", level: 3 },
+            { name: "Elite", level: 4 },
+            { name: "Master", level: 5 }
+        ];
+
+        const PLAYER_COLORS = [
+            { name: 'Green', light: '#A7F3D0', main: '#4ADE80', dark: '#16A34A' },
+            { name: 'Red', light: '#FCA5A5', main: '#EF4444', dark: '#7F1D1D' },
+            { name: 'Blue', light: '#93C5FD', main: '#3B82F6', dark: '#1E3A8A' },
+            { name: 'Yellow', light: '#FDE08A', main: '#F59E0B', dark: '#78350F' },
+            { name: 'Pink', light: '#FBCFE8', main: '#EC4899', dark: '#831843' },
+            { name: 'Purple', light: '#DDD6FE', main: '#8B5CF6', dark: '#4C1D95' },
+            { name: 'Teal', light: '#5EEAD4', main: '#0D9488', dark: '#115E59' },
+            { name: 'White', light: '#FFFFFF', main: '#E5E7EB', dark: '#9CA3AF' },
+            { name: 'Black', light: '#9CA3AF', main: '#1F2937', dark: '#000000' }
+        ];
+
+        // --- Setup Logic ---
+        function initializeSetup() {
+            gameState = 'SETUP';
+            document.getElementById('setup-screen').style.display = 'flex';
+            document.getElementById('game-screen').style.display = 'none';
+            winnerOverlay.classList.add('hidden');
+            winnerOverlay.classList.remove('flex');
+            playerSetupContainer.innerHTML = '';
+
+            if (setupPlayers.length === 0) {
+                for (let i = 0; i < MAX_PLAYERS; i++) {
+                    setupPlayers.push({
+                        id: i,
+                        color: null,
+                        type: i < 2 ? 'HUMAN' : 'OFF', // HUMAN, AI, OFF
+                        level: 'Novice'
+                    });
+                }
+            }
+
+            setupPlayers.forEach((player, i) => {
+                createPlayerSetupCard(i);
+            });
+            
+            updateSetupUI();
+        }
+
+        function createPlayerSetupCard(index) {
+            const card = document.createElement('div');
+            card.className = 'p-3 rounded-lg border-2 flex flex-col gap-2 transition-all min-h-[12rem]';
+            card.id = `setup-card-${index}`;
+
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center';
+            const name = document.createElement('span');
+            name.className = 'font-bold text-lg';
+            name.textContent = `Player ${index + 1}`;
+            const typeToggle = document.createElement('button');
+            typeToggle.className = 'px-3 py-1 rounded font-semibold';
+            typeToggle.onclick = () => togglePlayerType(index);
+            header.appendChild(name);
+            header.appendChild(typeToggle);
+            
+            const colorDisplay = document.createElement('div');
+            colorDisplay.id = `color-display-${index}`;
+            colorDisplay.className = 'w-full h-8 rounded text-center font-semibold flex items-center justify-center';
+            
+            const swatchContainer = document.createElement('div');
+            swatchContainer.id = `swatch-container-${index}`;
+            swatchContainer.className = 'flex flex-nowrap justify-center gap-1 mt-1';
+            
+            const aiLevelContainer = document.createElement('div');
+            aiLevelContainer.id = `ai-level-container-${index}`;
+            aiLevelContainer.className = 'flex flex-wrap justify-center gap-2 mt-auto pt-2';
+
+
+            card.appendChild(header);
+            card.appendChild(colorDisplay);
+            card.appendChild(swatchContainer);
+            card.appendChild(aiLevelContainer);
+            playerSetupContainer.appendChild(card);
+        }
+        
+        function togglePlayerType(index) {
+            const player = setupPlayers[index];
+            if (player.type === 'HUMAN') player.type = 'AI';
+            else if (player.type === 'AI') player.type = 'OFF';
+            else player.type = 'HUMAN';
+
+            if (player.type === 'OFF') {
+                player.color = null;
+            } else if (player.type === 'AI' && !player.color) {
+                assignRandomColorToAI(player);
+            }
+            updateSetupUI();
+        }
+        
+        function setAILevel(index, levelName) {
+            setupPlayers[index].level = levelName;
+            updateSetupUI();
+        }
+
+        function assignRandomColorToAI(player) {
+            const takenColors = setupPlayers.map(p => p.color?.name).filter(Boolean);
+            const availableColors = PLAYER_COLORS.filter(c => !takenColors.includes(c.name));
+            player.color = availableColors.length > 0 ? availableColors[Math.floor(Math.random() * availableColors.length)] : null;
+        }
+
+        function selectColorForPlayer(color, playerIndex) {
+            const player = setupPlayers[playerIndex];
+            if (player.type !== 'HUMAN') return;
+
+            const isTakenByHuman = setupPlayers.some(p => p.id !== playerIndex && p.type === 'HUMAN' && p.color?.name === color.name);
+            if (isTakenByHuman) return;
+            
+            const aiWithColor = setupPlayers.find(p => p.id !== playerIndex && p.type === 'AI' && p.color?.name === color.name);
+            if(aiWithColor) {
+                assignRandomColorToAI(aiWithColor);
+            }
+            
+            player.color = color;
+            updateSetupUI();
+        }
+
+        function updateSetupUI() {
+            setupPlayers.forEach((player, i) => {
+                const card = document.getElementById(`setup-card-${i}`);
+                const typeToggle = card.querySelector('button');
+                const colorDisplay = document.getElementById(`color-display-${i}`);
+                const swatchContainer = document.getElementById(`swatch-container-${i}`);
+                const aiLevelContainer = document.getElementById(`ai-level-container-${i}`);
+
+                card.style.opacity = player.type !== 'OFF' ? '1' : '0.4';
+                card.style.backgroundColor = player.color ? player.color.dark : '#4A5568';
+                card.style.borderColor = player.color ? player.color.main : '#374151';
+                
+                typeToggle.textContent = player.type;
+                typeToggle.style.backgroundColor = player.type === 'HUMAN' ? '#3B82F6' : player.type === 'AI' ? '#8B5CF6' : '#4B5563';
+
+                if (player.color) {
+                    colorDisplay.style.backgroundColor = player.color.main;
+                    colorDisplay.style.color = player.color.name === 'White' || player.color.name === 'Yellow' ? '#1F2937' : 'white';
+                    colorDisplay.textContent = player.color.name;
+                } else {
+                    colorDisplay.style.backgroundColor = '#374151';
+                    colorDisplay.style.color = 'white';
+                    colorDisplay.textContent = player.type !== 'OFF' ? 'Select a Color' : 'Off';
+                }
+
+                swatchContainer.innerHTML = '';
+                aiLevelContainer.innerHTML = '';
+
+                if (player.type === 'HUMAN') {
+                    PLAYER_COLORS.forEach(color => {
+                        const isColorTakenByOtherHuman = setupPlayers.some(p => p.id !== i && p.type === 'HUMAN' && p.color?.name === color.name);
+                        if(isColorTakenByOtherHuman) return;
+
+                        const swatch = document.createElement('div');
+                        swatch.className = 'mini-swatch';
+                        swatch.style.backgroundColor = color.main;
+                        if (player.color?.name === color.name) {
+                            swatch.classList.add('selected');
+                        }
+                        swatch.onclick = () => selectColorForPlayer(color, i);
+                        swatchContainer.appendChild(swatch);
+                    });
+                } else if (player.type === 'AI') {
+                    AI_LEVELS.forEach(level => {
+                        const levelButton = document.createElement('button');
+                        levelButton.textContent = level.name;
+                        levelButton.className = 'ai-level-button';
+                        if(player.level === level.name) {
+                            levelButton.classList.add('selected');
+                        }
+                        levelButton.onclick = () => setAILevel(i, level.name);
+                        aiLevelContainer.appendChild(levelButton);
+                    });
+                }
+            });
+
+            const configuredPlayers = setupPlayers.filter(p => p.type !== 'OFF' && p.color);
+            startGameButton.disabled = configuredPlayers.length < 2;
+        }
+        
+        startGameButton.addEventListener('click', () => {
+             players = setupPlayers.filter(p => p.type !== 'OFF' && p.color).map((p, i) => ({
+                id: i,
+                color: p.color.main,
+                lightColor: p.color.light,
+                darkColor: p.color.dark,
+                name: p.color.name,
+                type: p.type,
+                level: p.level,
+                isAlive: true,
+                cellCount: 0,
+                atomCount: 0
+            }));
+            activePlayers = players.length;
+            initializeGame();
+        });
+
+        function initializeGame() {
+            gameState = 'PLAYING';
+            setupScreen.style.display = 'none';
+            gameScreen.style.display = 'flex';
+            turnCount = 0;
+            grid = Array(GRID_HEIGHT).fill(null).map(() => Array(GRID_WIDTH).fill(null).map(() => ({ owner: null, atoms: 0 })));
+            currentPlayerIndex = Math.floor(Math.random() * activePlayers);
+            winnerOverlay.classList.add('hidden');
+            winnerOverlay.classList.remove('flex');
+            turnInProgress = false;
+            updateUI();
+            resizeCanvas();
+
+            if (players[currentPlayerIndex].type === 'AI') {
+                handleAITurn();
+            }
+        }
+
+        function resizeCanvas() {
+            const container = document.getElementById('canvas-container');
+            if(!container) return;
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            if (containerWidth <= 0 || containerHeight <= 0) return;
+            const cellSizeW = Math.floor(containerWidth / GRID_WIDTH);
+            const cellSizeH = Math.floor(containerHeight / GRID_HEIGHT);
+            cellSize = Math.min(cellSizeW, cellSizeH);
+            canvas.width = cellSize * GRID_WIDTH;
+            canvas.height = cellSize * GRID_HEIGHT;
+            canvas.style.width = `${canvas.width}px`;
+            canvas.style.height = `${canvas.height}px`;
+            drawGame();
+        }
+
+        function updateUI(message) {
+            if (message) {
+                 messageArea.innerHTML = `<span>${message}</span>`;
+            } else if (gameState === 'PLAYING' || gameState === 'GAMEOVER') {
+                const player = players[currentPlayerIndex];
+                messageArea.innerHTML = player ? `<span style="color: ${player.color}">${player.name} Player's Turn</span>` : '';
+            }
+
+            if (gameState !== 'PLAYING' && gameState !== 'GAMEOVER') return;
+            playersInfoDiv.innerHTML = '';
+            
+            const alivePlayers = players.filter(p => p.isAlive);
+            const stats = { maxCells: 0, minCells: Infinity, maxAtoms: 0, minAtoms: Infinity };
+
+            if(alivePlayers.length > 1) {
+                alivePlayers.forEach(p => {
+                    if (p.cellCount > stats.maxCells) stats.maxCells = p.cellCount;
+                    if (p.atomCount > stats.maxAtoms) stats.maxAtoms = p.atomCount;
+                    if (p.cellCount > 0 && p.cellCount < stats.minCells) stats.minCells = p.cellCount;
+                    if (p.atomCount > 0 && p.atomCount < stats.minAtoms) stats.minAtoms = p.atomCount;
+                });
+            }
+
+            players.forEach(player => {
+                const playerCard = document.createElement('div');
+                const titleText = player.type === 'AI' ? `${player.name} (${player.level})` : `${player.name} (H)`;
+                playerCard.className = `player-card p-4 rounded-lg border-2 flex justify-between items-center`;
+                playerCard.style.setProperty('--player-color', player.color);
+                playerCard.style.setProperty('--player-color-light', player.lightColor);
+
+                if (player.id === currentPlayerIndex && player.isAlive && gameState === 'PLAYING') {
+                    playerCard.classList.add('active');
+                    playerCard.style.borderColor = player.color;
+                } else {
+                    playerCard.style.borderColor = '#4B5563';
+                }
+
+                if (!player.isAlive) playerCard.classList.add('opacity-40');
+
+                const playerName = document.createElement('span');
+                playerName.className = 'font-bold text-lg';
+                playerName.textContent = titleText;
+                playerName.style.color = player.color;
+
+                const statsDiv = document.createElement('div');
+                statsDiv.className = 'text-right text-sm';
+                
+                const cellCountSpan = document.createElement('p');
+                cellCountSpan.textContent = `Cells: ${player.cellCount}`;
+                 if(player.isAlive && player.cellCount === stats.maxCells && stats.maxCells > 0) cellCountSpan.classList.add('highlight-green');
+                 if(player.isAlive && player.cellCount === stats.minCells && stats.minCells !== Infinity) cellCountSpan.classList.add('highlight-red');
+                
+                const atomCountSpan = document.createElement('p');
+                atomCountSpan.textContent = `Atoms: ${player.atomCount}`;
+                if(player.isAlive && player.atomCount === stats.maxAtoms && stats.maxAtoms > 0) atomCountSpan.classList.add('highlight-green');
+                if(player.isAlive && player.atomCount === stats.minAtoms && stats.minAtoms !== Infinity) atomCountSpan.classList.add('highlight-red');
+
+                statsDiv.appendChild(cellCountSpan);
+                statsDiv.appendChild(atomCountSpan);
+                playerCard.appendChild(playerName);
+                playerCard.appendChild(statsDiv);
+                playersInfoDiv.appendChild(playerCard);
+            });
+        }
+
+        function drawGame() {
+            if (gameState !== 'PLAYING' && gameState !== 'GAMEOVER') return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            drawAtoms();
+        }
+
+        function drawGrid() {
+            const midGrey = '#9CA3AF';
+            const lightGrey = '#D1D5DB';
+            const darkGrey = '#374151';
+            const borderWidth = 2;
+            
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    const cellX = x * cellSize;
+                    const cellY = y * cellSize;
+                    const offset = borderWidth / 2;
+                    
+                    ctx.fillStyle = midGrey;
+                    ctx.fillRect(cellX, cellY, cellSize, cellSize);
+
+                    ctx.strokeStyle = darkGrey;
+                    ctx.lineWidth = borderWidth;
+                    ctx.beginPath();
+                    ctx.moveTo(cellX + offset, cellY + offset);
+                    ctx.lineTo(cellX + offset, cellY + cellSize - offset);
+                    ctx.lineTo(cellX + cellSize - offset, cellY + cellSize - offset);
+                    ctx.stroke();
+
+                    ctx.strokeStyle = lightGrey;
+                    ctx.lineWidth = borderWidth;
+                    ctx.beginPath();
+                    ctx.moveTo(cellX + offset, cellY + offset);
+                    ctx.lineTo(cellX + cellSize - offset, cellY + offset);
+                    ctx.lineTo(cellX + cellSize - offset, cellY + cellSize - offset);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function drawAtoms() {
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    const cell = grid[y][x];
+                    if (cell.owner !== null) {
+                        const player = players[cell.owner];
+                        drawAtomInCell(x, y, cell.atoms, player);
+                    }
+                }
+            }
+        }
+
+        function drawAtomInCell(x, y, atomCount, player) {
+            if (atomCount === 0) return;
+            const { color, lightColor, darkColor } = player;
+            const centerX = x * cellSize + cellSize / 2;
+            const centerY = y * cellSize + cellSize / 2;
+            const radius = cellSize * 0.15;
+            const offset = cellSize * 0.18;
+            ctx.fillStyle = color;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = Math.max(1, cellSize * 0.04);
+            const positions = [];
+            switch (atomCount) {
+                case 1: positions.push({ x: centerX, y: centerY }); break;
+                case 2:
+                    positions.push({ x: centerX - offset, y: centerY });
+                    positions.push({ x: centerX + offset, y: centerY });
+                    drawLine(positions[0], positions[1]);
+                    break;
+                case 3:
+                    positions.push({ x: centerX, y: centerY - offset });
+                    positions.push({ x: centerX - offset, y: centerY + offset * 0.7 });
+                    positions.push({ x: centerX + offset, y: centerY + offset * 0.7 });
+                    drawLine(positions[0], positions[1]);
+                    drawLine(positions[1], positions[2]);
+                    drawLine(positions[2], positions[0]);
+                    break;
+                case 4:
+                    positions.push({ x: centerX - offset, y: centerY - offset });
+                    positions.push({ x: centerX + offset, y: centerY - offset });
+                    positions.push({ x: centerX + offset, y: centerY + offset });
+                    positions.push({ x: centerX - offset, y: centerY + offset });
+                    drawLine(positions[0], positions[1]);
+                    drawLine(positions[1], positions[2]);
+                    drawLine(positions[2], positions[3]);
+                    drawLine(positions[3], positions[0]);
+                    break;
+                default:
+                    positions.push({ x: centerX - offset, y: centerY - offset });
+                    positions.push({ x: centerX + offset, y: centerY - offset });
+                    positions.push({ x: centerX, y: centerY });
+                    positions.push({ x: centerX - offset, y: centerY + offset });
+                    positions.push({ x: centerX + offset, y: centerY + offset });
+                     drawLine(positions[0], positions[1]);
+                     drawLine(positions[1], positions[4]);
+                     drawLine(positions[4], positions[3]);
+                     drawLine(positions[3], positions[0]);
+                    break;
+            }
+            positions.forEach(pos => drawSphere(pos.x, pos.y, radius, color, lightColor, darkColor));
+        }
+
+        function drawSphere(x, y, radius, color, lightColor, darkColor) {
+            const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.4, radius * 0.05, x, y, radius);
+            grad.addColorStop(0, lightColor);
+            grad.addColorStop(0.7, color);
+            grad.addColorStop(1, darkColor);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawLine(pos1, pos2) {
+            ctx.beginPath();
+            ctx.moveTo(pos1.x, pos1.y);
+            ctx.lineTo(pos2.x, pos2.y);
+            ctx.stroke();
+        }
+
+        function getCellFromCoordinates(event) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+            const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+            const gridX = Math.floor(x / cellSize);
+            const gridY = Math.floor(y / cellSize);
+            return { gridX, gridY };
+        }
+
+        function getNeighborCount(x, y) {
+            let count = 0;
+            if (x > 0) count++;
+            if (x < GRID_WIDTH - 1) count++;
+            if (y > 0) count++;
+            if (y < GRID_HEIGHT - 1) count++;
+            return count;
+        }
+        
+        function getNeighbors(x, y) {
+            const neighbors = [];
+            if (x > 0) neighbors.push({x: x-1, y: y});
+            if (x < GRID_WIDTH - 1) neighbors.push({x: x+1, y: y});
+            if (y > 0) neighbors.push({x: x, y: y-1});
+            if (y < GRID_HEIGHT - 1) neighbors.push({x: x, y: y+1});
+            return neighbors;
+        }
+
+        function handlePlayerClick(event) {
+            event.preventDefault();
+            if (turnInProgress || gameState !== 'PLAYING' || players[currentPlayerIndex].type === 'AI') return;
+            const { gridX, gridY } = getCellFromCoordinates(event);
+            placeAtom(gridX, gridY);
+        }
+
+        function placeAtom(gridX, gridY) {
+            if (gridX < 0 || gridX >= GRID_WIDTH || gridY < 0 || gridY >= GRID_HEIGHT) return;
+            const cell = grid[gridY][gridX];
+            if (cell.owner !== null && cell.owner !== currentPlayerIndex) {
+                 updateUI("You can't play in an opponent's cell!");
+                return;
+            }
+            turnInProgress = true;
+            if (cell.owner === null) cell.owner = currentPlayerIndex;
+            cell.atoms++;
+            drawGame();
+            requestAnimationFrame(processExplosions);
+        }
+
+        async function processExplosions() {
+             const explosions = [];
+             for (let y = 0; y < GRID_HEIGHT; y++) {
+                 for (let x = 0; x < GRID_WIDTH; x++) {
+                     const cell = grid[y][x];
+                     const threshold = getNeighborCount(x, y);
+                     if (cell.owner === currentPlayerIndex && cell.atoms >= threshold) {
+                         explosions.push({ x, y, threshold });
+                     }
+                 }
+             }
+             if (explosions.length === 0) {
+                endTurn();
+                return;
+             }
+            for (const exp of explosions) {
+                 const cell = grid[exp.y][exp.x];
+                 cell.atoms -= exp.threshold;
+                 if (cell.atoms === 0) cell.owner = null;
+                 const neighbors = getNeighbors(exp.x, exp.y);
+                 for (const n of neighbors) {
+                     const neighborCell = grid[n.y][n.x];
+                     neighborCell.owner = currentPlayerIndex;
+                     neighborCell.atoms++;
+                 }
+            }
+            drawGame();
+            await new Promise(resolve => setTimeout(resolve, EXPLOSION_DELAY));
+            requestAnimationFrame(processExplosions);
+        }
+        
+        function endTurn() {
+            turnCount++;
+            updatePlayerStats();
+            const hasCellsOnBoard = players.some(p => p.cellCount > 0);
+            if (turnCount >= activePlayers && hasCellsOnBoard) {
+                players.forEach(player => {
+                    if (player.isAlive && player.cellCount === 0) {
+                        player.isAlive = false;
+                        updateUI(`${player.name} Player has been eliminated!`);
+                    }
+                });
+            }
+            const alivePlayers = players.filter(p => p.isAlive);
+            if (alivePlayers.length === 1 && hasCellsOnBoard && turnCount >= activePlayers) {
+                showWinner(alivePlayers[0]);
+                return;
+            }
+            if (players.some(p => p.isAlive)) {
+                let nextPlayerFound = false;
+                do {
+                    currentPlayerIndex = (currentPlayerIndex + 1) % activePlayers;
+                    if (players[currentPlayerIndex].isAlive) nextPlayerFound = true;
+                } while (!nextPlayerFound);
+            } else {
+                 updateUI('Game Over - No Winner!');
+                 turnInProgress = true; 
+                 return;
+            }
+            turnInProgress = false;
+            updateUI();
+            
+            if (gameState === 'PLAYING' && players[currentPlayerIndex].type === 'AI' && players[currentPlayerIndex].isAlive) {
+                handleAITurn();
+            }
+        }
+
+        function updatePlayerStats() {
+            players.forEach(p => { p.cellCount = 0; p.atomCount = 0; });
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    const cell = grid[y][x];
+                    if(cell.owner !== null) {
+                        const player = players[cell.owner];
+                        player.cellCount++;
+                        player.atomCount += cell.atoms;
+                    }
+                }
+            }
+        }
+        
+        function showWinner(player) {
+            gameState = 'GAMEOVER';
+            turnInProgress = true;
+            winnerText.textContent = `${player.name} Player Wins!`;
+            winnerText.style.color = player.color;
+            winnerOverlay.classList.remove('hidden');
+            winnerOverlay.classList.add('flex');
+            updateUI(`Congratulations ${player.name} Player!`);
+        }
+        
+        // --- AI LOGIC ---
+        async function handleAITurn() {
+            if (gameState !== 'PLAYING') return;
+            turnInProgress = true;
+            updateUI('Thinking...');
+            
+            await new Promise(resolve => setTimeout(resolve, 50)); 
+            
+            const player = players[currentPlayerIndex];
+            let bestMove;
+            switch(player.level) {
+                case "Adept": bestMove = findAdeptMove(); break;
+                case "Veteran": bestMove = findVeteranMove(); break;
+                case "Elite": bestMove = await findEliteMove(); break;
+                case "Master": bestMove = await findMasterMove(); break;
+                default: bestMove = findNoviceMove();
+            }
+
+            if (bestMove) {
+                placeAtom(bestMove.gridX, bestMove.gridY);
+            } else {
+                endTurn(); // Failsafe
+            }
+        }
+
+        function getScoredMoves(scoringLogic) {
+            let possibleMoves = [];
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    const cell = grid[y][x];
+                    if (cell.owner === null || cell.owner === currentPlayerIndex) {
+                        const score = scoringLogic(grid, x, y, currentPlayerIndex);
+                        possibleMoves.push({ gridX: x, gridY: y, score: score });
+                    }
+                }
+            }
+            if (possibleMoves.length === 0) return null;
+            
+            const maxScore = Math.max(...possibleMoves.map(m => m.score));
+            const bestMoves = possibleMoves.filter(m => m.score === maxScore);
+            return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+        }
+        
+        function scoreNovice(board, x, y, playerIndex) {
+            const cell = board[y][x];
+            const neighborCount = getNeighborCount(x, y);
+            if (cell.owner === null) {
+                if (neighborCount === 2) return 100;
+                if (neighborCount === 3) return 30;
+                if (neighborCount === 4) return 20;
+            } else if (cell.owner === playerIndex) {
+                const diff = neighborCount - cell.atoms;
+                if (diff === 2) return 95;
+                if (diff === 3) return 25;
+            }
+            return 1;
+        }
+
+        function scoreAdept(board, x, y, playerIndex) {
+            const cell = board[y][x];
+            const neighborCount = getNeighborCount(x, y);
+            let score = 0;
+            if (cell.owner === null) {
+                if (neighborCount === 2) score = 100;
+                if (neighborCount === 3) score = 30;
+                if (neighborCount === 4) score = 20;
+                const neighbors = getNeighbors(x, y);
+                for(const n of neighbors) {
+                    const nc = board[n.y][n.x];
+                    if (nc.owner !== null && nc.owner !== playerIndex) {
+                        const nThreshold = getNeighborCount(n.x, n.y);
+                        if(nc.atoms === nThreshold - 1) score -= 40;
+                    }
+                }
+            } else if (cell.owner === playerIndex) {
+                const diff = neighborCount - cell.atoms;
+                if (diff === 1) score = 110;
+                if (diff === 2) score = 95;
+                if (diff === 3) score = 25;
+            }
+            return score > 0 ? score : 1;
+        }
+
+        function scoreVeteran(board, x, y, playerIndex) {
+            const cell = board[y][x];
+            const neighborCount = getNeighborCount(x, y);
+            let score = 0;
+            if (cell.owner === null) {
+                if (neighborCount === 2) score = 100;
+                if (neighborCount === 3) score = 40;
+                if (neighborCount === 4) score = 20;
+                const neighbors = getNeighbors(x, y);
+                let isRisky = false;
+                for(const n of neighbors) {
+                    const nc = board[n.y][n.x];
+                    if (nc.owner !== null && nc.owner !== playerIndex && (nc.atoms >= getNeighborCount(n.x, n.y) - 1)) {
+                        isRisky = true;
+                        break;
+                    }
+                }
+                if (isRisky) score *= 0.1;
+            } else if (cell.owner === playerIndex) {
+                const diff = neighborCount - cell.atoms;
+                if (diff === 1) score = 120;
+                if (diff === 2) score = 90;
+                if (diff === 3) score = 30;
+            }
+            return score > 0 ? score : 1;
+        }
+
+        function findNoviceMove() { return getScoredMoves(scoreNovice); }
+        function findAdeptMove() { return getScoredMoves(scoreAdept); }
+        function findVeteranMove() { return getScoredMoves(scoreVeteran); }
+        
+        function evaluateBoardState(board, forPlayerIndex) {
+            let score = 0;
+            let myAtoms = 0, myCells = 0, myCriticals = 0;
+            let enemyAtoms = 0, enemyCells = 0, enemyCriticals = 0;
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    const cell = board[y][x];
+                    if (cell.owner === null) continue;
+                    const threshold = getNeighborCount(x,y);
+                    const isCritical = cell.atoms === threshold - 1;
+                    if (cell.owner === forPlayerIndex) {
+                        myAtoms += cell.atoms; myCells++; if (isCritical) myCriticals++;
+                    } else {
+                        enemyAtoms += cell.atoms; enemyCells++; if (isCritical) enemyCriticals++;
+                    }
+                }
+            }
+            if(enemyCells === 0 && myCells > 0) return Infinity;
+            score = (myAtoms - enemyAtoms) + (myCells - enemyCells) * 5 + (myCriticals - enemyCriticals) * 10;
+            return score;
+        }
+
+        function simulateMove(tempGrid, x, y, playerIndex) {
+            const cell = tempGrid[y][x];
+            if(cell.owner === null) cell.owner = playerIndex;
+            cell.atoms++;
+            let chain = [];
+            const threshold = getNeighborCount(x, y);
+            if(cell.owner === playerIndex && cell.atoms >= threshold) {
+                chain.push({x, y});
+            }
+            while(chain.length > 0) {
+                const current = chain.shift();
+                const currentCell = tempGrid[current.y][current.x];
+                const currentThreshold = getNeighborCount(current.x, current.y);
+                if (!currentCell || currentCell.atoms < currentThreshold) continue;
+                currentCell.atoms -= currentThreshold;
+                if(currentCell.atoms === 0) currentCell.owner = null;
+                const neighbors = getNeighbors(current.x, current.y);
+                for(const n of neighbors) {
+                    const neighborCell = tempGrid[n.y][n.x];
+                    neighborCell.owner = playerIndex;
+                    neighborCell.atoms++;
+                    const neighborThreshold = getNeighborCount(n.x, n.y);
+                    if(neighborCell.atoms >= neighborThreshold) {
+                        chain.push({x: n.x, y: n.y});
+                    }
+                }
+            }
+            return evaluateBoardState(tempGrid, playerIndex);
+        }
+        
+        function deepCloneGrid(originalGrid) {
+            return originalGrid.map(row => row.map(cell => ({...cell})));
+        }
+
+        async function findEliteMove() {
+            return getScoredMoves((board, x, y, playerIndex) => {
+                const tempGrid = deepCloneGrid(board);
+                return simulateMove(tempGrid, x, y, playerIndex);
+            });
+        }
+        
+        async function findMasterMove() {
+            let bestMove = null;
+            let maxScore = -Infinity;
+
+            let myCandidateMoves = [];
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    if (grid[y][x].owner === null || grid[y][x].owner === currentPlayerIndex) {
+                        const score = scoreVeteran(grid, x, y, currentPlayerIndex);
+                        myCandidateMoves.push({ x, y, score });
+                    }
+                }
+            }
+            myCandidateMoves.sort((a, b) => b.score - a.score);
+            const topMyMoves = myCandidateMoves.slice(0, 7);
+            if (topMyMoves.length === 0) return await findEliteMove();
+
+            let movesProcessed = 0;
+            for (const move of topMyMoves) {
+                const tempGridAfterMyMove = deepCloneGrid(grid);
+                simulateMove(tempGridAfterMyMove, move.x, move.y, currentPlayerIndex);
+
+                let mainOpponentIndex = -1;
+                let maxOpponentAtoms = -1;
+                for(let i = 0; i < players.length; i++) {
+                    if(i !== currentPlayerIndex && players[i].isAlive) {
+                        if(players[i].atomCount > maxOpponentAtoms) {
+                            maxOpponentAtoms = players[i].atomCount;
+                            mainOpponentIndex = i;
+                        }
+                    }
+                }
+
+                if (mainOpponentIndex === -1) return move;
+
+                let opponentCandidateMoves = [];
+                 for (let oy = 0; oy < GRID_HEIGHT; oy++) {
+                    for (let ox = 0; ox < GRID_WIDTH; ox++) {
+                        const oCell = tempGridAfterMyMove[oy][ox];
+                        if (oCell.owner === null || oCell.owner === mainOpponentIndex) {
+                           const score = scoreVeteran(tempGridAfterMyMove, ox, oy, mainOpponentIndex);
+                           opponentCandidateMoves.push({ gridX: ox, gridY: oy, score });
+                        }
+                    }
+                }
+
+                opponentCandidateMoves.sort((a, b) => b.score - a.score);
+                const topOpponentMoves = opponentCandidateMoves.slice(0, 5);
+                
+                let opponentBestReplyScore = -Infinity;
+
+                if (topOpponentMoves.length > 0) {
+                     for (const oppMove of topOpponentMoves) {
+                        const tempGridAfterOpponentMove = deepCloneGrid(tempGridAfterMyMove);
+                        const score = simulateMove(tempGridAfterOpponentMove, oppMove.gridX, oppMove.gridY, mainOpponentIndex);
+                        if(score > opponentBestReplyScore) opponentBestReplyScore = score;
+                    }
+                } else {
+                    opponentBestReplyScore = evaluateBoardState(tempGridAfterMyMove, mainOpponentIndex);
+                }
+                
+                const finalScore = -opponentBestReplyScore;
+                if (finalScore > maxScore) {
+                    maxScore = finalScore;
+                    bestMove = move;
+                }
+                
+                if (++movesProcessed % 3 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+            return bestMove || await findEliteMove();
+        }
+
+        canvas.addEventListener('click', handlePlayerClick);
+        canvas.addEventListener('touchstart', handlePlayerClick, { passive: false });
+        restartButton.addEventListener('click', initializeSetup);
+        window.addEventListener('resize', resizeCanvas);
+
+        initializeSetup();
+    </script>
+</body>
+</html>
+
