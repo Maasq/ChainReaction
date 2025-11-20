@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Updated viewport for better mobile behavior: prevents zooming and handles safe areas -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Chain Reaction</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -11,9 +12,19 @@
             font-family: 'Inter', sans-serif;
             overflow: hidden;
             touch-action: none; /* Prevents scrolling on touch devices */
+            -webkit-tap-highlight-color: transparent; /* Removes tap highlight on mobile */
         }
         canvas {
             cursor: pointer;
+            touch-action: none;
+        }
+        /* Scrollbar hiding for the horizontal player list on mobile */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
         }
         .player-card {
             transition: all 0.3s ease;
@@ -21,18 +32,16 @@
             background-color: #6B7280; /* Mid Grey */
         }
         .player-card.active {
-            transform: scale(1.05);
-            box-shadow: 0 0 15px 5px var(--player-color), 0 0 5px 2px var(--player-color-light);
+            transform: scale(1.02);
+            box-shadow: 0 0 10px 3px var(--player-color), 0 0 3px 1px var(--player-color-light);
         }
-        #players-info {
-             overflow-y: auto;
-        }
+        
         .highlight-green { color: #4ade80; /* green-400 */ }
         .highlight-red { color: #f87171; /* red-400 */ }
         
         .mini-swatch {
-            width: 1.25rem;
-            height: 1.25rem;
+            width: 1.5rem; /* Larger touch target */
+            height: 1.5rem;
             border-radius: 50%;
             cursor: pointer;
             border: 2px solid transparent;
@@ -54,9 +63,9 @@
             text-shadow: 0 0 5px #90ee90, 0 0 8px #90ee90;
         }
         .ai-level-button {
-            padding: 2px 8px;
+            padding: 4px 10px; /* Larger touch target */
             border-radius: 4px;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
             background-color: #4A5568;
@@ -69,83 +78,93 @@
 
     </style>
 </head>
-<body class="text-white bg-gray-900">
+<!-- h-dvh uses dynamic viewport height to fix issues with mobile address bars -->
+<body class="text-white bg-gray-900 h-dvh w-screen flex flex-col">
     <!-- Background Image & Overlay Layers -->
     <div class="absolute inset-0 z-0 bg-cover bg-center" style="background-image: url('https://picsum.photos/1920/1080');"></div>
     <div class="absolute inset-0 z-10 bg-black bg-opacity-60"></div>
 
     <!-- Main Content Container -->
-    <div class="relative z-20 flex flex-col h-screen p-2">
-        <header class="w-full max-w-4xl mx-auto mb-2 py-2 rounded-md game-header text-center">
-            <h1 class="text-5xl font-bold italic header-text">Chain Reaction</h1>
+    <div class="relative z-20 flex flex-col h-full p-2 w-full max-w-full overflow-hidden">
+        <header class="w-full max-w-4xl mx-auto mb-2 py-1 rounded-md game-header text-center flex-shrink-0">
+            <h1 class="text-3xl md:text-5xl font-bold italic header-text">Chain Reaction</h1>
         </header>
 
-        <main class="flex-grow w-full h-full min-h-0">
+        <main class="flex-grow w-full h-full min-h-0 flex flex-col">
             <!-- Game Setup Screen -->
-            <div id="setup-screen" class="w-full h-full max-w-4xl mx-auto flex flex-col items-center justify-center p-4 bg-gray-800 bg-opacity-90 rounded-xl">
-                <h1 class="text-5xl font-bold mb-6">Game Setup</h1>
-                <div id="player-setup-container" class="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                    <!-- Player setup cards go here -->
-                </div>
+            <div id="setup-screen" class="w-full h-full max-w-5xl mx-auto flex flex-col items-center justify-center p-2 bg-gray-800 bg-opacity-95 rounded-xl overflow-y-auto no-scrollbar">
+                <h1 class="text-3xl md:text-5xl font-bold mb-4 flex-shrink-0">Game Setup</h1>
+                
+                <div class="w-full flex-grow overflow-y-auto px-2 mb-4">
+                    <div id="player-setup-container" class="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <!-- Player setup cards go here -->
+                    </div>
 
-                <!-- Grid Settings -->
-                <div id="grid-settings" class="w-full max-w-lg bg-gray-700 p-4 rounded-lg mb-6">
-                    <h2 class="text-2xl font-bold mb-4 text-center">Grid Settings</h2>
-                    <div class="flex flex-col gap-4">
-                        <!-- Width Slider -->
-                        <div class="flex items-center gap-4">
-                            <label for="grid-width-slider" class="w-20">Width:</label>
-                            <input type="range" id="grid-width-slider" min="5" max="8" value="7" class="flex-grow">
-                            <span id="grid-width-value" class="w-8 text-center font-bold">7</span>
-                        </div>
-                        <!-- Height Slider -->
-                        <div class="flex items-center gap-4">
-                            <label for="grid-height-slider" class="w-20">Height:</label>
-                            <input type="range" id="grid-height-slider" min="6" max="11" value="11" class="flex-grow">
-                            <span id="grid-height-value" class="w-8 text-center font-bold">11</span>
-                        </div>
-                        <!-- Holes Toggle -->
-                        <div class="flex items-center gap-4 mt-2">
-                            <label for="enable-holes-toggle" class="w-20">Holes:</label>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                              <input type="checkbox" id="enable-holes-toggle" class="sr-only peer">
-                              <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
-                              <span class="ml-3 text-sm font-medium">Enable</span>
-                            </label>
+                    <!-- Grid Settings -->
+                    <div id="grid-settings" class="w-full max-w-lg bg-gray-700 p-3 rounded-lg my-4 mx-auto">
+                        <h2 class="text-xl font-bold mb-3 text-center">Grid Settings</h2>
+                        <div class="flex flex-col gap-3">
+                            <!-- Width Slider -->
+                            <div class="flex items-center gap-3">
+                                <label for="grid-width-slider" class="w-16 text-sm font-semibold">Width</label>
+                                <input type="range" id="grid-width-slider" min="5" max="10" value="7" class="flex-grow h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                                <span id="grid-width-value" class="w-6 text-center font-bold">7</span>
+                            </div>
+                            <!-- Height Slider -->
+                            <div class="flex items-center gap-3">
+                                <label for="grid-height-slider" class="w-16 text-sm font-semibold">Height</label>
+                                <input type="range" id="grid-height-slider" min="6" max="15" value="11" class="flex-grow h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                                <span id="grid-height-value" class="w-6 text-center font-bold">11</span>
+                            </div>
+                            <!-- Holes Toggle -->
+                            <div class="flex items-center gap-3 mt-1 justify-center">
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                  <input type="checkbox" id="enable-holes-toggle" class="sr-only peer">
+                                  <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                  <span class="ml-3 text-sm font-medium">Enable Holes</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <button id="start-game-button" class="bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-3 px-8 rounded-lg shadow-lg text-2xl transition-transform transform hover:scale-105">
+                <button id="start-game-button" class="flex-shrink-0 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-3 px-12 rounded-lg shadow-lg text-xl md:text-2xl transition-transform transform hover:scale-105 mb-2">
                     Start Game
                 </button>
             </div>
 
 
             <!-- Main Game Screen (hidden initially) -->
-            <div id="game-screen" class="w-full h-full max-w-7xl mx-auto hidden flex-col lg:flex-row items-stretch gap-4">
-                <!-- Player Info Panel -->
-                <div class="w-full lg:w-1/4 flex flex-col gap-4 flex-shrink-0">
-                    <div id="round-counter-area" class="text-center p-3 bg-gray-800 rounded-lg text-xl font-bold">
-                        Round: 1
+            <div id="game-screen" class="w-full h-full max-w-7xl mx-auto hidden flex-col lg:flex-row items-stretch gap-2 lg:gap-4 overflow-hidden">
+                
+                <!-- Player Info Panel (Responsive: Top strip on mobile, Sidebar on desktop) -->
+                <div class="w-full lg:w-1/4 flex flex-col gap-2 flex-shrink-0 h-auto max-h-[35%] lg:max-h-full lg:h-full">
+                    
+                    <div class="flex justify-between items-center lg:block">
+                         <div id="round-counter-area" class="text-center p-2 bg-gray-800 rounded-lg text-lg lg:text-xl font-bold flex-grow lg:mb-2">
+                            Round: 1
+                        </div>
+                         <div id="message-area" class="text-center p-2 bg-gray-800 rounded-lg text-sm lg:text-lg font-medium flex items-center justify-center flex-grow ml-2 lg:ml-0 lg:mb-2 lg:h-12">
+                            <span>Welcome!</span>
+                        </div>
                     </div>
-                    <div id="players-info" class="space-y-3 flex-grow relative">
+
+                    <!-- Scrollable Player List -->
+                    <div id="players-info" class="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-y-auto lg:overflow-x-hidden no-scrollbar flex-grow min-h-0 p-1">
                         <!-- Player cards will be inserted here -->
                     </div>
-                     <div id="message-area" class="text-center p-3 h-12 bg-gray-800 rounded-lg text-lg font-medium flex items-center justify-center">
-                        <span>Welcome!</span>
-                    </div>
-                    <button id="restart-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-105 mt-auto">
+
+                    <button id="restart-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 lg:py-3 px-4 rounded-lg shadow-lg transition-transform transform active:scale-95 lg:hover:scale-105 mt-auto text-sm lg:text-base">
                         Restart Game
                     </button>
                 </div>
 
                 <!-- Game Canvas -->
-                <div id="canvas-container" class="relative flex-grow flex items-center justify-center min-h-0">
-                    <canvas id="gameCanvas"></canvas>
-                     <div id="winner-overlay" class="absolute inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center hidden rounded-lg">
-                        <h2 id="winner-text" class="text-5xl font-bold"></h2>
-                        <p class="text-xl mt-4">Click Restart to play again!</p>
+                <div id="canvas-container" class="relative flex-grow flex items-center justify-center min-h-0 bg-gray-800 bg-opacity-30 rounded-lg overflow-hidden">
+                    <canvas id="gameCanvas" class="touch-none"></canvas>
+                     <div id="winner-overlay" class="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center hidden rounded-lg z-50 p-4 text-center">
+                        <h2 id="winner-text" class="text-4xl md:text-6xl font-bold mb-4"></h2>
+                        <p class="text-lg md:text-xl">Tap Restart to play again!</p>
                     </div>
                 </div>
             </div>
@@ -250,31 +269,31 @@
 
         function createPlayerSetupCard(index) {
             const card = document.createElement('div');
-            card.className = 'p-3 rounded-lg border-2 flex flex-col gap-2 transition-all min-h-[12rem]';
+            card.className = 'p-2 rounded-lg border-2 flex flex-col gap-2 transition-all bg-gray-700';
             card.id = `setup-card-${index}`;
 
             const header = document.createElement('div');
             header.className = 'flex justify-between items-center';
             const name = document.createElement('span');
-            name.className = 'font-bold text-lg';
+            name.className = 'font-bold text-base md:text-lg';
             name.textContent = `Player ${index + 1}`;
             const typeToggle = document.createElement('button');
-            typeToggle.className = 'px-3 py-1 rounded font-semibold';
+            typeToggle.className = 'px-2 py-1 rounded font-semibold text-xs md:text-sm';
             typeToggle.onclick = () => togglePlayerType(index);
             header.appendChild(name);
             header.appendChild(typeToggle);
             
             const colorDisplay = document.createElement('div');
             colorDisplay.id = `color-display-${index}`;
-            colorDisplay.className = 'w-full h-8 rounded text-center font-semibold flex items-center justify-center';
+            colorDisplay.className = 'w-full h-6 md:h-8 rounded text-center font-semibold flex items-center justify-center text-sm';
             
             const swatchContainer = document.createElement('div');
             swatchContainer.id = `swatch-container-${index}`;
-            swatchContainer.className = 'flex flex-nowrap justify-center gap-1 mt-1';
+            swatchContainer.className = 'flex flex-wrap justify-center gap-1 mt-1';
             
             const aiLevelContainer = document.createElement('div');
             aiLevelContainer.id = `ai-level-container-${index}`;
-            aiLevelContainer.className = 'flex flex-wrap justify-center gap-2 mt-auto pt-2';
+            aiLevelContainer.className = 'flex flex-wrap justify-center gap-1 mt-auto pt-1';
 
 
             card.appendChild(header);
@@ -333,7 +352,7 @@
                 const swatchContainer = document.getElementById(`swatch-container-${i}`);
                 const aiLevelContainer = document.getElementById(`ai-level-container-${i}`);
 
-                card.style.opacity = player.type !== 'OFF' ? '1' : '0.4';
+                card.style.opacity = player.type !== 'OFF' ? '1' : '0.5';
                 card.style.backgroundColor = player.color ? player.color.dark : '#4A5568';
                 card.style.borderColor = player.color ? player.color.main : '#374151';
                 
@@ -347,7 +366,7 @@
                 } else {
                     colorDisplay.style.backgroundColor = '#374151';
                     colorDisplay.style.color = 'white';
-                    colorDisplay.textContent = player.type !== 'OFF' ? 'Select a Color' : 'Off';
+                    colorDisplay.textContent = player.type !== 'OFF' ? 'Select Color' : 'Off';
                 }
 
                 swatchContainer.innerHTML = '';
@@ -448,13 +467,19 @@
             const containerWidth = container.clientWidth;
             const containerHeight = container.clientHeight;
             if (containerWidth <= 0 || containerHeight <= 0) return;
-            const cellSizeW = Math.floor(containerWidth / GRID_WIDTH);
-            const cellSizeH = Math.floor(containerHeight / GRID_HEIGHT);
-            cellSize = Math.min(cellSizeW, cellSizeH);
+            
+            // Adjust cell size logic for best fit
+            const cellW = Math.floor(containerWidth / GRID_WIDTH);
+            const cellH = Math.floor(containerHeight / GRID_HEIGHT);
+            cellSize = Math.min(cellW, cellH); // Keep square cells
+            
             canvas.width = cellSize * GRID_WIDTH;
             canvas.height = cellSize * GRID_HEIGHT;
+            
+            // Center canvas in container
             canvas.style.width = `${canvas.width}px`;
             canvas.style.height = `${canvas.height}px`;
+            
             if (gameState === 'PLAYING') drawGame();
         }
 
@@ -493,8 +518,10 @@
 
             players.forEach(player => {
                 const playerCard = document.createElement('div');
-                const titleText = player.type === 'AI' ? `${player.name} (${player.level})` : `${player.name} (H)`;
-                playerCard.className = `player-card p-4 rounded-lg border-2 flex justify-between items-center`;
+                const titleText = player.type === 'AI' ? `${player.name} (AI)` : `${player.name}`;
+                // Mobile: horizontal layout for card content
+                // Desktop: Vertical or block layout
+                playerCard.className = `player-card p-2 rounded-lg border-2 flex flex-col justify-center min-w-[120px] md:min-w-[140px] lg:min-w-0 lg:flex-row lg:justify-between lg:items-center lg:p-4`;
                 playerCard.style.setProperty('--player-color', player.color);
                 playerCard.style.setProperty('--player-color-light', player.lightColor);
 
@@ -505,22 +532,25 @@
                     playerCard.style.borderColor = '#4B5563';
                 }
 
-                if (!player.isAlive) playerCard.classList.add('opacity-40');
+                if (!player.isAlive) {
+                     playerCard.classList.add('opacity-40');
+                     playerCard.style.borderColor = '#374151'; // Dim border for dead players
+                }
 
                 const playerName = document.createElement('span');
-                playerName.className = 'font-bold text-lg';
+                playerName.className = 'font-bold text-sm lg:text-lg whitespace-nowrap';
                 playerName.textContent = titleText;
                 playerName.style.color = player.color;
 
                 const statsDiv = document.createElement('div');
-                statsDiv.className = 'text-right text-sm';
+                statsDiv.className = 'text-xs lg:text-sm text-center lg:text-right mt-1 lg:mt-0';
                 
-                const cellCountSpan = document.createElement('p');
+                const cellCountSpan = document.createElement('div');
                 cellCountSpan.textContent = `Cells: ${player.cellCount}`;
                  if(player.isAlive && player.cellCount === stats.maxCells && stats.maxCells > 0) cellCountSpan.classList.add('highlight-green');
                  if(player.isAlive && player.cellCount === stats.minCells && stats.minCells !== Infinity) cellCountSpan.classList.add('highlight-red');
                 
-                const atomCountSpan = document.createElement('p');
+                const atomCountSpan = document.createElement('div');
                 atomCountSpan.textContent = `Atoms: ${player.atomCount}`;
                 if(player.isAlive && player.atomCount === stats.maxAtoms && stats.maxAtoms > 0) atomCountSpan.classList.add('highlight-green');
                 if(player.isAlive && player.atomCount === stats.minAtoms && stats.minAtoms !== Infinity) atomCountSpan.classList.add('highlight-red');
@@ -730,8 +760,19 @@
 
         function getCellFromCoordinates(event) {
             const rect = canvas.getBoundingClientRect();
-            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
-            const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+            // Handle both mouse and touch events correctly
+            let clientX, clientY;
+            if (event.changedTouches && event.changedTouches.length > 0) {
+                clientX = event.changedTouches[0].clientX;
+                clientY = event.changedTouches[0].clientY;
+            } else if (event.touches && event.touches.length > 0) {
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+            } else {
+                clientX = event.clientX;
+                clientY = event.clientY;
+            }
+
             const x = clientX - rect.left;
             const y = clientY - rect.top;
             const gridX = Math.floor(x / cellSize);
@@ -762,6 +803,8 @@
 
         function handlePlayerClick(event) {
             event.preventDefault();
+            // Check if touch event (to prevent double firing if both click and touch are active)
+            // but here we just preventDefault which usually stops the click from firing after touch
             if (turnInProgress || gameState !== 'PLAYING' || players[currentPlayerIndex].type === 'AI') return;
             const { gridX, gridY } = getCellFromCoordinates(event);
             placeAtom(gridX, gridY);
@@ -771,7 +814,7 @@
             if (gridX < 0 || gridX >= GRID_WIDTH || gridY < 0 || gridY >= GRID_HEIGHT) return;
             
             if (grid[gridY][gridX] === null) {
-                updateUI("You can't play in a hole!");
+                // Do nothing for holes, no UI message needed to avoid spamming on miss-clicks
                 return;
             }
 
@@ -1087,7 +1130,11 @@
             if(cell.owner === playerIndex && cell.atoms >= threshold) {
                 chain.push({x, y});
             }
+            let iterations = 0;
             while(chain.length > 0) {
+                iterations++;
+                if (iterations > 5000) return -Infinity; // Safeguard against infinite loops
+                
                 const current = chain.shift();
                 const currentCell = tempGrid[current.y][current.x];
                 if (currentCell === null) continue;
@@ -1212,6 +1259,7 @@
             return bestMove || await findEliteMove();
         }
 
+        // Updated Event Listeners for reliable touch support
         canvas.addEventListener('click', handlePlayerClick);
         canvas.addEventListener('touchstart', handlePlayerClick, { passive: false });
         
@@ -1222,4 +1270,3 @@
     </script>
 </body>
 </html>
-
