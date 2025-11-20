@@ -225,27 +225,12 @@
                 osc.type = 'sine';
                 
                 // Pitch Logic based on "closeness to capacity":
-                // gap = threshold - atomCount.
-                // gap 0 (full/exploding): Base Max
-                // gap 1 (1 below max): Base Max - 50
-                // gap 2 (2 below max): Base Max - 100
-                // etc.
-                
                 const gap = threshold - atomCount;
-                
-                // Human Base Max: 850 Hz
-                // AI Base Max: 600 Hz
                 const baseMaxFreq = isHuman ? 850 : 600;
-                
-                // Calculate target frequency. We subtract 50Hz for every step away from max.
-                // If atomCount >= threshold (explosion), gap <= 0, freq >= baseMaxFreq.
                 let targetFreq = baseMaxFreq - (gap * 50);
-                
-                // Clamp min freq to ensure it doesn't go too low/negative
                 if(targetFreq < 100) targetFreq = 100;
                 
                 osc.frequency.setValueAtTime(targetFreq, this.audioCtx.currentTime);
-                // Quick pitch decay for "pop" effect
                 osc.frequency.exponentialRampToValueAtTime(targetFreq * 0.8, this.audioCtx.currentTime + 0.1);
 
                 gain.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
@@ -275,8 +260,8 @@
                 osc.start(t);
                 osc.stop(t + 0.3);
 
-                // 2. Noise Burst (Rumble) - Requires creating a noise buffer
-                const bufferSize = this.audioCtx.sampleRate * 0.4; // 0.4 seconds
+                // 2. Noise Burst (Rumble)
+                const bufferSize = this.audioCtx.sampleRate * 0.4; 
                 const buffer = this.audioCtx.createBuffer(1, bufferSize, this.audioCtx.sampleRate);
                 const data = buffer.getChannelData(0);
                 for (let i = 0; i < bufferSize; i++) {
@@ -311,35 +296,26 @@
                 gain.connect(this.audioCtx.destination);
 
                 if (isHuman) {
-                    // Human Elimination: Descending C Minor Arpeggio (C5, G4, Eb4, C4)
                     const notes = [523.25, 392.00, 311.13, 261.63];
                     const duration = 0.15;
-                    
-                    // Play individual notes
                     notes.forEach((freq, i) => {
                         const noteOsc = this.audioCtx.createOscillator();
                         const noteGain = this.audioCtx.createGain();
                         noteOsc.connect(noteGain);
                         noteGain.connect(this.audioCtx.destination);
-                        
                         noteOsc.type = 'sine';
                         noteOsc.frequency.value = freq;
-                        
                         noteGain.gain.setValueAtTime(0.2, t + i * duration);
                         noteGain.gain.exponentialRampToValueAtTime(0.01, t + i * duration + duration);
-                        
                         noteOsc.start(t + i * duration);
                         noteOsc.stop(t + i * duration + duration);
                     });
                 } else {
-                    // AI Elimination: Power down slide
                     osc.type = 'sawtooth';
                     osc.frequency.setValueAtTime(300, t);
                     osc.frequency.exponentialRampToValueAtTime(50, t + 0.4);
-                    
                     gain.gain.setValueAtTime(0.15, t);
                     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-                    
                     osc.start(t);
                     osc.stop(t + 0.4);
                 }
@@ -347,23 +323,17 @@
 
             playWin() {
                 if (!this.audioCtx || this.isMuted) return;
-                
-                const notes = [523.25, 659.25, 783.99, 1046.50]; // C Major Arpeggio
+                const notes = [523.25, 659.25, 783.99, 1046.50]; 
                 let time = this.audioCtx.currentTime;
-
                 notes.forEach((note, i) => {
                     const osc = this.audioCtx.createOscillator();
                     const gain = this.audioCtx.createGain();
-                    
                     osc.connect(gain);
                     gain.connect(this.audioCtx.destination);
-
                     osc.type = 'sine';
                     osc.frequency.value = note;
-
                     gain.gain.setValueAtTime(0.2, time + i * 0.1);
                     gain.gain.exponentialRampToValueAtTime(0.01, time + i * 0.1 + 0.4);
-
                     osc.start(time + i * 0.1);
                     osc.stop(time + i * 0.1 + 0.4);
                 });
@@ -413,6 +383,7 @@
         let gameState = 'SETUP'; // SETUP, PLAYING, GAMEOVER
         let activeAnimations = [];
         let animationFrameId = null;
+        let lastInputTime = 0; // Debounce tracker
 
         const AI_LEVELS = [
             { name: "Novice", level: 1 },
@@ -608,7 +579,7 @@
         }
         
         startGameButton.addEventListener('click', () => {
-             soundManager.init(); // Initialize audio on user interaction
+             soundManager.init(); 
              
              // Apply Settings
              GRID_WIDTH = parseInt(gridWidthSlider.value, 10);
@@ -676,15 +647,13 @@
             const containerHeight = container.clientHeight;
             if (containerWidth <= 0 || containerHeight <= 0) return;
             
-            // Adjust cell size logic for best fit
             const cellW = Math.floor(containerWidth / GRID_WIDTH);
             const cellH = Math.floor(containerHeight / GRID_HEIGHT);
-            cellSize = Math.min(cellW, cellH); // Keep square cells
+            cellSize = Math.min(cellW, cellH);
             
             canvas.width = cellSize * GRID_WIDTH;
             canvas.height = cellSize * GRID_HEIGHT;
             
-            // Center canvas in container
             canvas.style.width = `${canvas.width}px`;
             canvas.style.height = `${canvas.height}px`;
             
@@ -727,8 +696,6 @@
             players.forEach(player => {
                 const playerCard = document.createElement('div');
                 const titleText = player.type === 'AI' ? `${player.name} (AI)` : `${player.name}`;
-                // Mobile: horizontal layout for card content
-                // Desktop: Vertical or block layout
                 playerCard.className = `player-card p-2 rounded-lg border-2 flex flex-col justify-center min-w-[120px] md:min-w-[140px] lg:min-w-0 lg:flex-row lg:justify-between lg:items-center lg:p-4`;
                 playerCard.style.setProperty('--player-color', player.color);
                 playerCard.style.setProperty('--player-color-light', player.lightColor);
@@ -742,7 +709,7 @@
 
                 if (!player.isAlive) {
                      playerCard.classList.add('opacity-40');
-                     playerCard.style.borderColor = '#374151'; // Dim border for dead players
+                     playerCard.style.borderColor = '#374151';
                 }
 
                 const playerName = document.createElement('span');
@@ -785,11 +752,10 @@
             
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 for (let x = 0; x < GRID_WIDTH; x++) {
-                    if (grid[y][x] === null) continue; // Skip drawing holes
+                    if (grid[y][x] === null) continue;
 
                     const cellX = x * cellSize;
                     const cellY = y * cellSize;
-                    const offset = borderWidth / 2;
                     
                     ctx.fillStyle = midGrey;
                     ctx.fillRect(cellX, cellY, cellSize, cellSize);
@@ -797,17 +763,17 @@
                     ctx.strokeStyle = darkGrey;
                     ctx.lineWidth = borderWidth;
                     ctx.beginPath();
-                    ctx.moveTo(cellX + offset, cellY + offset);
-                    ctx.lineTo(cellX + offset, cellY + cellSize - offset);
-                    ctx.lineTo(cellX + cellSize - offset, cellY + cellSize - offset);
+                    ctx.moveTo(cellX + borderWidth/2, cellY + borderWidth/2);
+                    ctx.lineTo(cellX + borderWidth/2, cellY + cellSize - borderWidth/2);
+                    ctx.lineTo(cellX + cellSize - borderWidth/2, cellY + cellSize - borderWidth/2);
                     ctx.stroke();
 
                     ctx.strokeStyle = lightGrey;
                     ctx.lineWidth = borderWidth;
                     ctx.beginPath();
-                    ctx.moveTo(cellX + offset, cellY + offset);
-                    ctx.lineTo(cellX + cellSize - offset, cellY + offset);
-                    ctx.lineTo(cellX + cellSize - offset, cellY + cellSize - offset);
+                    ctx.moveTo(cellX + borderWidth/2, cellY + borderWidth/2);
+                    ctx.lineTo(cellX + cellSize - borderWidth/2, cellY + borderWidth/2);
+                    ctx.lineTo(cellX + cellSize - borderWidth/2, cellY + cellSize - borderWidth/2);
                     ctx.stroke();
                 }
             }
@@ -869,17 +835,16 @@
             ctx.lineWidth = Math.max(1, cellSize * 0.04);
             const positions = getAtomPositions(x, y, atomCount);
             
-            if(positions.length > 1) { // Draw lines between atoms
+            if(positions.length > 1) {
                 for(let i = 0; i < positions.length; i++) {
                     for(let j = i + 1; j < positions.length; j++) {
-                         // Simple connection logic for up to 5 atoms
                          if(atomCount <= 3) drawLine(positions[i], positions[j]);
                          else if (atomCount === 4) {
                             if((i+j) !== 3) drawLine(positions[i], positions[j]);
                          }
                     }
                 }
-                 if(atomCount > 4) { // Custom for 5+
+                 if(atomCount > 4) {
                     drawLine(positions[0], positions[1]);
                     drawLine(positions[1], positions[4]);
                     drawLine(positions[4], positions[3]);
@@ -919,11 +884,15 @@
         
         function drawAnimations() {
             const now = performance.now();
-            const maxRadius = cellSize * 0.3; // 60% of cell width
-            const totalDuration = 370 * animationSpeedMultiplier; // Apply speed setting
+            const maxRadius = cellSize * 0.3;
+            const totalDuration = 370 * animationSpeedMultiplier;
+            let allFinished = true;
 
-            for (let i = activeAnimations.length - 1; i >= 0; i--) {
+            for (let i = 0; i < activeAnimations.length; i++) {
                 const anim = activeAnimations[i];
+                if (anim.finished) continue;
+                
+                allFinished = false;
                 const elapsed = now - anim.startTime;
                 const progress = Math.min(elapsed / totalDuration, 1);
 
@@ -931,9 +900,7 @@
                 const centerY = anim.y * cellSize + cellSize / 2;
                 const baseRadius = cellSize * 0.15;
 
-                // Stage 1: Converge (0ms - 170ms scaled)
                 const p1End = 170 / 370;
-                // Stage 2: Grow (170ms - 270ms scaled)
                 const p2End = 270 / 370;
 
                 if (progress < p1End) {
@@ -949,7 +916,6 @@
                     const newRadius = baseRadius + (maxRadius - baseRadius) * growProgress;
                     drawSphere(centerX, centerY, newRadius, anim.player.color, anim.player.lightColor, anim.player.darkColor);
                 } 
-                // Stage 3: Flash (270ms - 370ms scaled)
                 else {
                     const flashProgress = (progress - p2End) / (1 - p2End);
                     const isFlashOn = Math.floor(flashProgress * 8) % 2 === 0;
@@ -959,17 +925,21 @@
                 }
 
                 if (progress >= 1) {
-                    if (anim.onComplete) {
-                        anim.onComplete();
-                    }
-                    activeAnimations.splice(i, 1);
+                    anim.finished = true;
                 }
+            }
+            
+            if (activeAnimations.length > 0 && allFinished) {
+                 if (activeAnimations[0].onComplete) {
+                     const callback = activeAnimations[0].onComplete;
+                     activeAnimations = [];
+                     callback();
+                 }
             }
         }
 
         function getCellFromCoordinates(event) {
             const rect = canvas.getBoundingClientRect();
-            // Handle both mouse and touch events correctly
             let clientX, clientY;
             if (event.changedTouches && event.changedTouches.length > 0) {
                 clientX = event.changedTouches[0].clientX;
@@ -1012,8 +982,11 @@
 
         function handlePlayerClick(event) {
             event.preventDefault();
-            // Check if touch event (to prevent double firing if both click and touch are active)
-            // but here we just preventDefault which usually stops the click from firing after touch
+            // Debounce: Check if enough time has passed since the last interaction
+            const now = Date.now();
+            if (now - lastInputTime < 300) return; // Ignore clicks within 300ms of previous
+            lastInputTime = now;
+
             if (turnInProgress || gameState !== 'PLAYING' || players[currentPlayerIndex].type === 'AI') return;
             const { gridX, gridY } = getCellFromCoordinates(event);
             placeAtom(gridX, gridY);
@@ -1023,8 +996,12 @@
             if (gridX < 0 || gridX >= GRID_WIDTH || gridY < 0 || gridY >= GRID_HEIGHT) return;
             
             if (grid[gridY][gridX] === null) {
-                // Do nothing for holes, no UI message needed to avoid spamming on miss-clicks
                 return;
+            }
+            
+            // Isolate Cell Check: Don't play in dead cells (0 neighbors) to avoid infinite loops
+            if (getNeighborCount(gridX, gridY, grid) === 0) {
+                 return; 
             }
 
             const cell = grid[gridY][gridX];
@@ -1035,10 +1012,8 @@
             turnInProgress = true;
             if (cell.owner === null) cell.owner = currentPlayerIndex;
             
-            // Update atom count
             cell.atoms++;
             
-            // Play sound based on player type, new atom count, and capacity threshold
             const isHuman = players[currentPlayerIndex].type === 'HUMAN';
             const threshold = getNeighborCount(gridX, gridY, grid);
             soundManager.playPop(isHuman, cell.atoms, threshold);
@@ -1066,7 +1041,7 @@
                 return;
              }
              
-             soundManager.playExplosion(); // Play sound for wave of explosions
+             soundManager.playExplosion();
             
              let waveCounter = explodingCells.length;
              const onWaveComplete = () => {
@@ -1083,6 +1058,8 @@
                             neighborCell.atoms++;
                         });
                     });
+                    
+                    activeAnimations = [];
                     
                     const winner = checkForWinner();
                     if (winner) {
@@ -1102,7 +1079,8 @@
                     initialPositions: getAtomPositions(exp.x, exp.y, exp.cell.atoms),
                     startTime: performance.now(),
                     duration: 370 * animationSpeedMultiplier,
-                    onComplete: onWaveComplete 
+                    onComplete: onWaveComplete,
+                    finished: false
                 });
              });
         }
